@@ -1,0 +1,24 @@
+@page
+@{
+    ViewData["Title"] = "Registration Disabled";
+}
+
+<div class="row justify-content-center">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <h2>Registration Not Available</h2>
+            </div>
+            <div class="card-body text-center">
+                <p class="alert alert-info">
+                    <i class="fas fa-info-circle"></i>
+                    Public registration is currently disabled.
+                </p>
+                <p>Please contact your administrator to create an account.</p>
+                <a asp-area="Identity" asp-page="/Account/Login" class="btn btn-primary">
+                    <i class="fas fa-sign-in-alt"></i> Login
+                </a>
+            </div>
+        </div>
+    </div>
+</div>

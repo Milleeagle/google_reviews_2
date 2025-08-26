@@ -1,0 +1,205 @@
+@model google_reviews.Models.Company
+@{
+    ViewData["Title"] = $"{Model.Name} - Reviews";
+}
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h2>@Model.Name</h2>
+        @if (!Model.IsActive)
+        {
+            <span class="badge bg-secondary">Inactive</span>
+        }
+    </div>
+    <div>
+        <a asp-action="Index" class="btn btn-outline-secondary">
+            <i class="fas fa-arrow-left"></i> Back to Companies
+        </a>
+        @if (User.IsInRole("Admin") && !string.IsNullOrEmpty(Model.PlaceId))
+        {
+            <form asp-action="RefreshReviews" asp-route-id="@Model.Id" method="post" class="d-inline">
+                <button type="submit" class="btn btn-success" 
+                        onclick="this.innerHTML='<i class=\'fas fa-spinner fa-spin\'></i> Refreshing...';">
+                    <i class="fas fa-sync-alt"></i> Refresh Reviews
+                </button>
+            </form>
+        }
+    </div>
+</div>
+
+@if (TempData["Success"] != null)
+{
+    <div class="alert alert-success alert-dismissible fade show" role="alert">
+        @TempData["Success"]
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+}
+
+@if (TempData["Error"] != null)
+{
+    <div class="alert alert-danger alert-dismissible fade show" role="alert">
+        @TempData["Error"]
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+}
+
+<div class="row mb-4">
+    <div class="col-md-8">
+        <div class="card">
+            <div class="card-body">
+                <h5 class="card-title">Company Information</h5>
+                
+                @if (Model.Reviews.Any())
+                {
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="text-center">
+                                <h3 class="display-4 text-warning">@Model.Reviews.Average(r => r.Rating).ToString("F1")</h3>
+                                <div class="text-warning mb-2">
+                                    @for (int i = 1; i <= 5; i++)
+                                    {
+                                        if (i <= Math.Round(Model.Reviews.Average(r => r.Rating)))
+                                        {
+                                            <i class="fas fa-star"></i>
+                                        }
+                                        else
+                                        {
+                                            <i class="far fa-star"></i>
+                                        }
+                                    }
+                                </div>
+                                <p class="text-muted">Based on @Model.Reviews.Count reviews</p>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="rating-breakdown">
+                                @for (int rating = 5; rating >= 1; rating--)
+                                {
+                                    var count = Model.Reviews.Count(r => r.Rating == rating);
+                                    var percentage = Model.Reviews.Any() ? (count * 100.0 / Model.Reviews.Count) : 0;
+                                    <div class="d-flex align-items-center mb-1">
+                                        <span class="me-2">@rating ⭐</span>
+                                        <div class="progress flex-grow-1 me-2" style="height: 10px;">
+                                            <div class="progress-bar bg-warning" role="progressbar" 
+                                                 style="width: @percentage%"></div>
+                                        </div>
+                                        <small class="text-muted">@count</small>
+                                    </div>
+                                }
+                            </div>
+                        </div>
+                    </div>
+                }
+                
+                <hr />
+                
+                <div class="row text-muted">
+                    <div class="col-sm-6">
+                        <strong>Place ID:</strong> @(Model.PlaceId ?? "Not set")
+                    </div>
+                    <div class="col-sm-6">
+                        <strong>Last Updated:</strong> @Model.LastUpdated.ToString("MMM dd, yyyy HH:mm")
+                    </div>
+                </div>
+                
+                @if (!string.IsNullOrEmpty(Model.GoogleMapsUrl))
+                {
+                    <div class="mt-2">
+                        <a href="@Model.GoogleMapsUrl" target="_blank" class="btn btn-outline-primary btn-sm">
+                            <i class="fas fa-external-link-alt"></i> View on Google Maps
+                        </a>
+                    </div>
+                }
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header">
+        <h5 class="mb-0">Reviews (@Model.Reviews.Count)</h5>
+    </div>
+    <div class="card-body">
+        @if (Model.Reviews.Any())
+        {
+            @foreach (var review in Model.Reviews)
+            {
+                <div class="border-bottom mb-3 pb-3">
+                    <div class="d-flex align-items-start">
+                        @if (!string.IsNullOrEmpty(review.ProfilePhotoUrl))
+                        {
+                            <img src="@review.ProfilePhotoUrl" alt="@review.AuthorName" class="rounded-circle me-3" 
+                                 style="width: 40px; height: 40px;">
+                        }
+                        else
+                        {
+                            <div class="bg-secondary rounded-circle d-flex align-items-center justify-content-center me-3"
+                                 style="width: 40px; height: 40px;">
+                                <i class="fas fa-user text-white"></i>
+                            </div>
+                        }
+                        
+                        <div class="flex-grow-1">
+                            <div class="d-flex justify-content-between align-items-start">
+                                <div>
+                                    <h6 class="mb-1">
+                                        @if (!string.IsNullOrEmpty(review.AuthorUrl))
+                                        {
+                                            <a href="@review.AuthorUrl" target="_blank" class="text-decoration-none">
+                                                @review.AuthorName
+                                            </a>
+                                        }
+                                        else
+                                        {
+                                            @review.AuthorName
+                                        }
+                                    </h6>
+                                    <div class="text-warning mb-1">
+                                        @for (int i = 1; i <= 5; i++)
+                                        {
+                                            if (i <= review.Rating)
+                                            {
+                                                <i class="fas fa-star"></i>
+                                            }
+                                            else
+                                            {
+                                                <i class="far fa-star"></i>
+                                            }
+                                        }
+                                    </div>
+                                </div>
+                                <small class="text-muted">@review.Time.ToString("MMM dd, yyyy")</small>
+                            </div>
+                            
+                            @if (!string.IsNullOrEmpty(review.Text))
+                            {
+                                <p class="mb-0 mt-2">@review.Text</p>
+                            }
+                        </div>
+                    </div>
+                </div>
+            }
+        }
+        else
+        {
+            <div class="text-center py-4">
+                <i class="fas fa-comments fa-3x text-muted mb-3"></i>
+                <h5 class="text-muted">No Reviews Available</h5>
+                <p class="text-muted">
+                    @if (string.IsNullOrEmpty(Model.PlaceId))
+                    {
+                        <span>This company doesn't have a Google Place ID set.</span>
+                    }
+                    else if (User.IsInRole("Admin"))
+                    {
+                        <span>Click "Refresh Reviews" to fetch the latest reviews from Google.</span>
+                    }
+                    else
+                    {
+                        <span>No reviews have been fetched yet.</span>
+                    }
+                </p>
+            </div>
+        }
+    </div>
+</div>

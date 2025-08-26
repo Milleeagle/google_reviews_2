@@ -1,0 +1,110 @@
+@{
+    ViewData["Title"] = "Google Places API Test";
+    bool apiConnected = (bool)ViewBag.ApiConnected;
+    bool hasApiKey = (bool)ViewBag.ApiKey;
+}
+
+<div class="row justify-content-center">
+    <div class="col-md-8">
+        <div class="card">
+            <div class="card-header">
+                <h3><i class="fas fa-cog"></i> Google Places API Test</h3>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-6">
+                        <h5>API Configuration</h5>
+                        <ul class="list-group list-group-flush">
+                            <li class="list-group-item d-flex justify-content-between align-items-center">
+                                API Key Configured
+                                <span class="badge bg-@(hasApiKey ? "success" : "danger")">
+                                    @(hasApiKey ? "Yes" : "No")
+                                </span>
+                            </li>
+                            <li class="list-group-item">
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <span>API Key Value</span>
+                                    <code>@ViewBag.ApiKeyValue</code>
+                                </div>
+                            </li>
+                            <li class="list-group-item d-flex justify-content-between align-items-center">
+                                API Connection
+                                <span class="badge bg-@(apiConnected ? "success" : "danger")">
+                                    @(apiConnected ? "Working" : "Failed")
+                                </span>
+                            </li>
+                        </ul>
+                    </div>
+                    <div class="col-md-6">
+                        <h5>Status</h5>
+                        @if (!hasApiKey)
+                        {
+                            <div class="alert alert-warning">
+                                <i class="fas fa-exclamation-triangle"></i>
+                                <strong>API Key Missing</strong><br />
+                                Add your Google Places API key to configuration.
+                            </div>
+                        }
+                        else if (!apiConnected)
+                        {
+                            <div class="alert alert-danger">
+                                <i class="fas fa-times-circle"></i>
+                                <strong>Connection Failed</strong><br />
+                                Check your API key and internet connection.
+                            </div>
+                        }
+                        else
+                        {
+                            <div class="alert alert-success">
+                                <i class="fas fa-check-circle"></i>
+                                <strong>All Good!</strong><br />
+                                Your API is configured and working properly.
+                            </div>
+                        }
+                    </div>
+                </div>
+
+                @if (!hasApiKey)
+                {
+                    <hr />
+                    <div class="alert alert-info">
+                        <h6><i class="fas fa-info-circle"></i> How to configure Google Places API:</h6>
+                        <ol>
+                            <li>Go to the <a href="https://console.cloud.google.com/" target="_blank">Google Cloud Console</a></li>
+                            <li>Create a new project or select an existing one</li>
+                            <li>Enable the "Places API" in the API Library</li>
+                            <li>Create credentials (API Key) for the Places API</li>
+                            <li>Add the API key to your configuration:</li>
+                        </ol>
+                        
+                        <h6>Configuration Options:</h6>
+                        
+                        <div class="row">
+                            <div class="col-md-6">
+                                <strong>appsettings.json:</strong>
+                                <pre class="bg-light p-2 mt-2"><code>{
+  "GooglePlaces": {
+    "ApiKey": "YOUR_API_KEY_HERE"
+  }
+}</code></pre>
+                            </div>
+                            <div class="col-md-6">
+                                <strong>Environment Variable:</strong>
+                                <pre class="bg-light p-2 mt-2"><code>GooglePlaces__ApiKey=YOUR_API_KEY_HERE</code></pre>
+                            </div>
+                        </div>
+                    </div>
+                }
+
+                <div class="d-flex justify-content-between mt-3">
+                    <a asp-action="Index" class="btn btn-secondary">
+                        <i class="fas fa-arrow-left"></i> Back to Reviews
+                    </a>
+                    <a asp-action="TestApi" class="btn btn-primary">
+                        <i class="fas fa-sync-alt"></i> Test Again
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>

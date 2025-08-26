@@ -1,0 +1,123 @@
+@model List<google_reviews.Models.Company>
+@{
+    ViewData["Title"] = "Companies & Reviews";
+}
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2>Companies & Reviews</h2>
+    @if (User.IsInRole("Admin"))
+    {
+        <div>
+            <a asp-action="AddCompany" class="btn btn-primary">
+                <i class="fas fa-plus"></i> Add Company
+            </a>
+            <a asp-action="TestApi" class="btn btn-outline-secondary">
+                <i class="fas fa-cog"></i> Test API
+            </a>
+        </div>
+    }
+</div>
+
+@if (TempData["Success"] != null)
+{
+    <div class="alert alert-success alert-dismissible fade show" role="alert">
+        @TempData["Success"]
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+}
+
+@if (TempData["Error"] != null)
+{
+    <div class="alert alert-danger alert-dismissible fade show" role="alert">
+        @TempData["Error"]
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+}
+
+@if (Model.Any())
+{
+    <div class="row">
+        @foreach (var company in Model)
+        {
+            <div class="col-md-6 col-lg-4 mb-4">
+                <div class="card h-100">
+                    <div class="card-body">
+                        <h5 class="card-title">
+                            @company.Name
+                            @if (!company.IsActive)
+                            {
+                                <span class="badge bg-secondary">Inactive</span>
+                            }
+                        </h5>
+                        
+                        <div class="mb-2">
+                            <small class="text-muted">
+                                <i class="fas fa-clock"></i>
+                                Last updated: @company.LastUpdated.ToString("MMM dd, yyyy HH:mm")
+                            </small>
+                        </div>
+
+                        @if (company.Reviews.Any())
+                        {
+                            <div class="mb-2">
+                                <span class="text-warning">
+                                    @for (int i = 1; i <= 5; i++)
+                                    {
+                                        if (i <= Math.Round(company.Reviews.Average(r => r.Rating)))
+                                        {
+                                            <i class="fas fa-star"></i>
+                                        }
+                                        else
+                                        {
+                                            <i class="far fa-star"></i>
+                                        }
+                                    }
+                                </span>
+                                <small class="text-muted">
+                                    (@company.Reviews.Average(r => r.Rating).ToString("F1")) - @company.Reviews.Count reviews
+                                </small>
+                            </div>
+                        }
+                        else
+                        {
+                            <p class="text-muted">No reviews available</p>
+                        }
+
+                        @if (!string.IsNullOrEmpty(company.PlaceId))
+                        {
+                            <small class="text-muted d-block">Place ID: @company.PlaceId</small>
+                        }
+                    </div>
+                    <div class="card-footer">
+                        <a asp-action="Company" asp-route-id="@company.Id" class="btn btn-outline-primary btn-sm">
+                            <i class="fas fa-eye"></i> View Details
+                        </a>
+                        @if (User.IsInRole("Admin") && !string.IsNullOrEmpty(company.PlaceId))
+                        {
+                            <form asp-action="RefreshReviews" asp-route-id="@company.Id" method="post" class="d-inline">
+                                <button type="submit" class="btn btn-outline-success btn-sm" 
+                                        onclick="this.innerHTML='<i class=\'fas fa-spinner fa-spin\'></i> Refreshing...';">
+                                    <i class="fas fa-sync-alt"></i> Refresh
+                                </button>
+                            </form>
+                        }
+                    </div>
+                </div>
+            </div>
+        }
+    </div>
+}
+else
+{
+    <div class="text-center py-5">
+        <i class="fas fa-building fa-3x text-muted mb-3"></i>
+        <h4 class="text-muted">No Companies Added Yet</h4>
+        <p class="text-muted">Add your first company to start tracking Google Reviews.</p>
+        @if (User.IsInRole("Admin"))
+        {
+            <a asp-action="AddCompany" class="btn btn-primary">
+                <i class="fas fa-plus"></i> Add Your First Company
+            </a>
+        }
+    </div>
+}

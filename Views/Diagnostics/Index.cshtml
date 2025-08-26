@@ -1,0 +1,87 @@
+@{
+    ViewData["Title"] = "System Diagnostics";
+    var diagnostics = ViewBag.Diagnostics;
+}
+
+<h2>System Diagnostics</h2>
+
+<div class="card">
+    <div class="card-body">
+        <h5 class="card-title">Database Status</h5>
+        
+        <div class="row">
+            <div class="col-md-6">
+                <ul class="list-group list-group-flush">
+                    <li class="list-group-item d-flex justify-content-between align-items-center">
+                        Database Connected
+                        <span class="badge bg-@(diagnostics.DatabaseConnected ? "success" : "danger")">
+                            @(diagnostics.DatabaseConnected ? "Yes" : "No")
+                        </span>
+                    </li>
+                    <li class="list-group-item d-flex justify-content-between align-items-center">
+                        Tables Exist
+                        <span class="badge bg-@(diagnostics.TablesExist ? "success" : "danger")">
+                            @(diagnostics.TablesExist ? "Yes" : "No")
+                        </span>
+                    </li>
+                    <li class="list-group-item d-flex justify-content-between align-items-center">
+                        Roles Configured
+                        <span class="badge bg-@(diagnostics.RolesExist ? "success" : "danger")">
+                            @(diagnostics.RolesExist ? "Yes" : "No")
+                        </span>
+                    </li>
+                    <li class="list-group-item d-flex justify-content-between align-items-center">
+                        Admin User Exists
+                        <span class="badge bg-@(diagnostics.AdminUserExists ? "success" : "danger")">
+                            @(diagnostics.AdminUserExists ? "Yes" : "No")
+                        </span>
+                    </li>
+                    <li class="list-group-item d-flex justify-content-between align-items-center">
+                        Total Users
+                        <span class="badge bg-primary">@diagnostics.UsersCount</span>
+                    </li>
+                </ul>
+            </div>
+        </div>
+
+        @if (!diagnostics.DatabaseConnected || !diagnostics.TablesExist)
+        {
+            <div class="alert alert-warning mt-3">
+                <h6>Action Required:</h6>
+                <p>Run the following commands to set up the database:</p>
+                <code>
+                    dotnet ef migrations add "InitialSetup"<br/>
+                    dotnet ef database update
+                </code>
+            </div>
+        }
+
+        @if (diagnostics.DatabaseConnected && diagnostics.TablesExist && !diagnostics.RolesExist)
+        {
+            <div class="alert alert-info mt-3">
+                <h6>Roles Setup:</h6>
+                <p>Restart the application to initialize roles and admin user.</p>
+            </div>
+        }
+
+        @if (diagnostics.DatabaseConnected && diagnostics.TablesExist && diagnostics.RolesExist && !diagnostics.AdminUserExists)
+        {
+            <div class="alert alert-warning mt-3">
+                <h6>Admin User Setup:</h6>
+                <p>Admin user not found. Click the button below to create one:</p>
+                <form asp-action="CreateAdminUser" method="post" class="d-inline">
+                    <button type="submit" class="btn btn-warning">Create Admin User</button>
+                </form>
+            </div>
+        }
+
+        @if (diagnostics.DatabaseConnected && diagnostics.TablesExist && diagnostics.RolesExist && diagnostics.AdminUserExists)
+        {
+            <div class="alert alert-success mt-3">
+                <h6>✅ System Ready!</h6>
+                <p>You can now test login functionality:</p>
+                <a asp-area="Identity" asp-page="/Account/Login" class="btn btn-primary">Go to Login</a>
+            </div>
+        }
+    </div>
+</div>

@@ -1,0 +1,79 @@
+@model google_reviews.Models.Company
+@{
+    ViewData["Title"] = "Add Company";
+}
+
+<div class="row justify-content-center">
+    <div class="col-md-8">
+        <div class="card">
+            <div class="card-header">
+                <h3>Add New Company</h3>
+            </div>
+            <div class="card-body">
+                <form asp-action="AddCompany" method="post">
+                    <div asp-validation-summary="ModelOnly" class="alert alert-danger"></div>
+                    
+                    <div class="mb-3">
+                        <label asp-for="Name" class="form-label"></label>
+                        <input asp-for="Name" class="form-control" placeholder="Enter company name" />
+                        <span asp-validation-for="Name" class="text-danger"></span>
+                    </div>
+
+                    <div class="mb-3">
+                        <label asp-for="PlaceId" class="form-label"></label>
+                        <input asp-for="PlaceId" class="form-control" placeholder="e.g. ChIJN1t_tDeuEmsRUsoyG83frY4" />
+                        <div class="form-text">
+                            <i class="fas fa-info-circle"></i>
+                            Find the Place ID by searching on 
+                            <a href="https://developers.google.com/maps/documentation/places/web-service/place-id" target="_blank">
+                                Google's Place ID Finder
+                            </a>
+                        </div>
+                        <span asp-validation-for="PlaceId" class="text-danger"></span>
+                    </div>
+
+                    <div class="mb-3">
+                        <label asp-for="GoogleMapsUrl" class="form-label"></label>
+                        <input asp-for="GoogleMapsUrl" class="form-control" placeholder="https://maps.google.com/..." />
+                        <div class="form-text">Optional: Direct link to the Google Maps listing</div>
+                        <span asp-validation-for="GoogleMapsUrl" class="text-danger"></span>
+                    </div>
+
+                    <div class="mb-3 form-check">
+                        <input asp-for="IsActive" class="form-check-input" checked />
+                        <label asp-for="IsActive" class="form-check-label"></label>
+                        <div class="form-text">Inactive companies won't be included in automatic review updates</div>
+                    </div>
+
+                    <div class="d-grid gap-2 d-md-flex justify-content-md-end">
+                        <a asp-action="Index" class="btn btn-secondary me-md-2">Cancel</a>
+                        <button type="submit" class="btn btn-primary">Add Company</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <div class="card mt-4">
+            <div class="card-header">
+                <h5><i class="fas fa-lightbulb"></i> How to find a Place ID</h5>
+            </div>
+            <div class="card-body">
+                <ol>
+                    <li>Go to <a href="https://developers.google.com/maps/documentation/places/web-service/place-id" target="_blank">Google's Place ID Finder</a></li>
+                    <li>Search for your business or location</li>
+                    <li>Click on the location in the map</li>
+                    <li>Copy the Place ID from the results</li>
+                    <li>Paste it into the "Google Place ID" field above</li>
+                </ol>
+                <div class="alert alert-info">
+                    <i class="fas fa-info-circle"></i>
+                    <strong>Note:</strong> You'll need a valid Google Places API key configured to fetch reviews.
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+    <partial name="_ValidationScriptsPartial" />
+}
