@@ -1,0 +1,263 @@
+@model IEnumerable<google_reviews.Models.SheetCompany>
+@{
+    ViewData["Title"] = "Import Companies from Sheet";
+    string documentId = ViewBag.DocumentId;
+}
+
+<div class="container mt-4">
+    <div class="row">
+        <div class="col-md-12">
+            <nav aria-label="breadcrumb">
+                <ol class="breadcrumb">
+                    <li class="breadcrumb-item"><a asp-action="Index">Drive Documents</a></li>
+                    <li class="breadcrumb-item active" aria-current="page">Import Companies</li>
+                </ol>
+            </nav>
+
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <h1>@ViewData["Title"]</h1>
+                <a asp-action="Index" class="btn btn-outline-secondary">Back to Documents</a>
+            </div>
+
+            @if (TempData["Success"] != null)
+            {
+                <div class="alert alert-success alert-dismissible fade show" role="alert">
+                    @TempData["Success"]
+                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                </div>
+            }
+
+            @if (TempData["Error"] != null)
+            {
+                <div class="alert alert-danger alert-dismissible fade show" role="alert">
+                    @TempData["Error"]
+                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                </div>
+            }
+
+            @if (TempData["Warning"] != null)
+            {
+                <div class="alert alert-warning alert-dismissible fade show" role="alert">
+                    @TempData["Warning"]
+                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                </div>
+            }
+
+            <form asp-action="ImportSelectedCompanies" method="post">
+                <input type="hidden" name="documentId" value="@documentId" />
+                
+                <div class="card">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <h5 class="card-title">Companies Found in Sheet (@Model.Count())</h5>
+                        <div class="btn-group btn-group-sm" role="group">
+                            <button type="button" class="btn btn-outline-primary" onclick="selectAll()">Select All</button>
+                            <button type="button" class="btn btn-outline-secondary" onclick="selectNone()">Select None</button>
+                            <button type="button" class="btn btn-outline-info" onclick="selectNew()">Select New Only</button>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        @if (Model.Any())
+                        {
+                            <div class="table-responsive">
+                                <table class="table table-hover">
+                                    <thead class="table-light">
+                                        <tr>
+                                            <th style="width: 50px;">
+                                                <input type="checkbox" id="selectAllCheckbox" onchange="toggleAll(this)">
+                                            </th>
+                                            <th>Row</th>
+                                            <th>Company Name</th>
+                                            <th>Place ID</th>
+                                            <th>Maps URL</th>
+                                            <th>Additional Info</th>
+                                            <th>Status</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        @foreach (var company in Model)
+                                        {
+                                            <tr class="@(company.AlreadyExists ? "table-warning" : "")">
+                                                <td>
+                                                    <input type="checkbox" 
+                                                           name="selectedRows" 
+                                                           value="@company.RowNumber" 
+                                                           class="company-checkbox @(company.AlreadyExists ? "existing-company" : "new-company")"
+                                                           @(company.AlreadyExists ? "disabled" : "") />
+                                                </td>
+                                                <td>@company.RowNumber</td>
+                                                <td>
+                                                    <strong>@company.Name</strong>
+                                                    @if (string.IsNullOrEmpty(company.Name))
+                                                    {
+                                                        <span class="text-danger">
+                                                            <i class="fas fa-exclamation-triangle"></i> Missing Name
+                                                        </span>
+                                                    }
+                                                </td>
+                                                <td>
+                                                    @if (!string.IsNullOrEmpty(company.PlaceId))
+                                                    {
+                                                        <code class="small">@company.PlaceId</code>
+                                                    }
+                                                    else
+                                                    {
+                                                        <span class="text-muted">-</span>
+                                                    }
+                                                </td>
+                                                <td>
+                                                    @if (!string.IsNullOrEmpty(company.GoogleMapsUrl))
+                                                    {
+                                                        <a href="@company.GoogleMapsUrl" target="_blank" class="btn btn-sm btn-outline-primary">
+                                                            <i class="fas fa-external-link-alt"></i>
+                                                        </a>
+                                                    }
+                                                    else
+                                                    {
+                                                        <span class="text-muted">-</span>
+                                                    }
+                                                </td>
+                                                <td>
+                                                    <small class="text-muted">
+                                                        @if (!string.IsNullOrEmpty(company.Address))
+                                                        {
+                                                            <div><strong>Address:</strong> @company.Address</div>
+                                                        }
+                                                        @if (!string.IsNullOrEmpty(company.Phone))
+                                                        {
+                                                            <div><strong>Phone:</strong> @company.Phone</div>
+                                                        }
+                                                        @if (!string.IsNullOrEmpty(company.Website))
+                                                        {
+                                                            <div><strong>Website:</strong> @company.Website</div>
+                                                        }
+                                                        @if (!string.IsNullOrEmpty(company.Category))
+                                                        {
+                                                            <div><strong>Category:</strong> @company.Category</div>
+                                                        }
+                                                        @if (company.AdditionalData.Any())
+                                                        {
+                                                            @foreach (var kvp in company.AdditionalData.Take(3))
+                                                            {
+                                                                <div><strong>@kvp.Key:</strong> @kvp.Value</div>
+                                                            }
+                                                        }
+                                                    </small>
+                                                </td>
+                                                <td>
+                                                    @if (company.AlreadyExists)
+                                                    {
+                                                        <span class="badge bg-warning text-dark">
+                                                            <i class="fas fa-check-circle"></i> Already Exists
+                                                        </span>
+                                                    }
+                                                    else if (string.IsNullOrEmpty(company.Name))
+                                                    {
+                                                        <span class="badge bg-danger">
+                                                            <i class="fas fa-exclamation-triangle"></i> Invalid
+                                                        </span>
+                                                    }
+                                                    else
+                                                    {
+                                                        <span class="badge bg-success">
+                                                            <i class="fas fa-plus-circle"></i> Ready to Import
+                                                        </span>
+                                                    }
+                                                </td>
+                                            </tr>
+                                        }
+                                    </tbody>
+                                </table>
+                            </div>
+                        }
+                        else
+                        {
+                            <div class="text-center py-4">
+                                <p class="text-muted">No companies found in the sheet.</p>
+                            </div>
+                        }
+                    </div>
+                    <div class="card-footer">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <div>
+                                <small class="text-muted">
+                                    @{
+                                        var newCompanies = Model.Count(c => !c.AlreadyExists && !string.IsNullOrEmpty(c.Name));
+                                        var existingCompanies = Model.Count(c => c.AlreadyExists);
+                                        var invalidCompanies = Model.Count(c => string.IsNullOrEmpty(c.Name));
+                                    }
+                                    <span class="badge bg-success me-1">@newCompanies New</span>
+                                    <span class="badge bg-warning text-dark me-1">@existingCompanies Existing</span>
+                                    @if (invalidCompanies > 0)
+                                    {
+                                        <span class="badge bg-danger">@invalidCompanies Invalid</span>
+                                    }
+                                </small>
+                            </div>
+                            <div>
+                                <button type="submit" class="btn btn-primary" id="importButton" disabled>
+                                    <i class="fas fa-download"></i> Import Selected Companies
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                @Html.AntiForgeryToken()
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+    function toggleAll(source) {
+        const checkboxes = document.querySelectorAll('.company-checkbox:not(:disabled)');
+        checkboxes.forEach(checkbox => {
+            checkbox.checked = source.checked;
+        });
+        updateImportButton();
+    }
+
+    function selectAll() {
+        const checkboxes = document.querySelectorAll('.company-checkbox:not(:disabled)');
+        checkboxes.forEach(checkbox => {
+            checkbox.checked = true;
+        });
+        document.getElementById('selectAllCheckbox').checked = true;
+        updateImportButton();
+    }
+
+    function selectNone() {
+        const checkboxes = document.querySelectorAll('.company-checkbox');
+        checkboxes.forEach(checkbox => {
+            checkbox.checked = false;
+        });
+        document.getElementById('selectAllCheckbox').checked = false;
+        updateImportButton();
+    }
+
+    function selectNew() {
+        const checkboxes = document.querySelectorAll('.company-checkbox');
+        checkboxes.forEach(checkbox => {
+            checkbox.checked = checkbox.classList.contains('new-company');
+        });
+        updateImportButton();
+    }
+
+    function updateImportButton() {
+        const selectedCount = document.querySelectorAll('.company-checkbox:checked').length;
+        const importButton = document.getElementById('importButton');
+        importButton.disabled = selectedCount === 0;
+        importButton.textContent = selectedCount > 0 
+            ? `Import ${selectedCount} Selected Companies`
+            : 'Import Selected Companies';
+    }
+
+    // Add event listeners to all checkboxes
+    document.addEventListener('DOMContentLoaded', function() {
+        const checkboxes = document.querySelectorAll('.company-checkbox');
+        checkboxes.forEach(checkbox => {
+            checkbox.addEventListener('change', updateImportButton);
+        });
+        updateImportButton();
+    });
+</script>

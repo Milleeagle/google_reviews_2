@@ -7,12 +7,21 @@
     <h2>Companies & Reviews</h2>
     @if (User.IsInRole("Admin"))
     {
-        <div>
+        <div class="btn-group" role="group">
             <a asp-action="AddCompany" class="btn btn-primary">
                 <i class="fas fa-plus"></i> Add Company
             </a>
             <a asp-action="TestApi" class="btn btn-outline-secondary">
                 <i class="fas fa-cog"></i> Test API
+            </a>
+            <button type="button" class="btn btn-outline-info" data-bs-toggle="modal" data-bs-target="#extractPlaceIdsModal">
+                <i class="fas fa-search"></i> Extract Place IDs
+            </button>
+            <a asp-controller="Drive" asp-action="SimplePlaceIdFinder" class="btn btn-outline-success">
+                <i class="fas fa-map-marker-alt"></i> Place ID Finder
+            </a>
+            <a asp-action="ReviewMonitor" class="btn btn-outline-warning">
+                <i class="fas fa-search"></i> Review Monitor
             </a>
         </div>
     }
@@ -30,6 +39,14 @@
 {
     <div class="alert alert-danger alert-dismissible fade show" role="alert">
         @TempData["Error"]
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+}
+
+@if (TempData["Info"] != null)
+{
+    <div class="alert alert-info alert-dismissible fade show" role="alert">
+        @TempData["Info"]
         <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
     </div>
 }
@@ -121,3 +138,37 @@ else
         }
     </div>
 }
+
+<!-- Extract Place IDs Modal -->
+<div class="modal fade" id="extractPlaceIdsModal" tabindex="-1" aria-labelledby="extractPlaceIdsModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="extractPlaceIdsModalLabel">Extract Place IDs</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p>This will attempt to extract Google Place IDs from the Google Maps URLs of companies that don't already have Place IDs.</p>
+                <p><strong>What this does:</strong></p>
+                <ul>
+                    <li>Finds companies with Google Maps URLs but no Place ID</li>
+                    <li>Extracts Place IDs from various Google Maps URL formats</li>
+                    <li>Updates companies with extracted Place IDs</li>
+                    <li>Enables you to fetch reviews for these companies</li>
+                </ul>
+                <div class="alert alert-info">
+                    <i class="fas fa-info-circle"></i> Place IDs are required to fetch Google Reviews through the API.
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <form asp-controller="Drive" asp-action="ExtractPlaceIds" method="post" class="d-inline">
+                    @Html.AntiForgeryToken()
+                    <button type="submit" class="btn btn-primary">
+                        <i class="fas fa-search"></i> Extract Place IDs
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>

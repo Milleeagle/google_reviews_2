@@ -1,0 +1,207 @@
+@{
+    ViewData["Title"] = "Debug Sheet Import";
+    var document = ViewBag.Document as google_reviews.Models.GoogleDriveDocument;
+    var sheetData = ViewBag.SheetData as google_reviews.Models.GoogleSheetData;
+    var companies = ViewBag.Companies as List<google_reviews.Models.SheetCompany>;
+    var error = ViewBag.Error as string;
+    var stackTrace = ViewBag.StackTrace as string;
+}
+
+<div class="container mt-4">
+    <div class="row">
+        <div class="col-md-12">
+            <h1>@ViewData["Title"]</h1>
+            
+            <nav aria-label="breadcrumb">
+                <ol class="breadcrumb">
+                    <li class="breadcrumb-item"><a asp-action="Index">Drive Documents</a></li>
+                    <li class="breadcrumb-item active" aria-current="page">Debug</li>
+                </ol>
+            </nav>
+
+            @if (!string.IsNullOrEmpty(error))
+            {
+                <div class="alert alert-danger">
+                    <h5>Error Occurred:</h5>
+                    <p><strong>@error</strong></p>
+                    @if (!string.IsNullOrEmpty(stackTrace))
+                    {
+                        <details>
+                            <summary>Stack Trace</summary>
+                            <pre class="small">@stackTrace</pre>
+                        </details>
+                    }
+                </div>
+            }
+
+            <div class="row">
+                <!-- Document Info -->
+                <div class="col-md-4">
+                    <div class="card">
+                        <div class="card-header">
+                            <h5>Document Information</h5>
+                        </div>
+                        <div class="card-body">
+                            @if (document != null)
+                            {
+                                <p><strong>✅ Document Found</strong></p>
+                                <p><strong>Name:</strong> @document.Name</p>
+                                <p><strong>ID:</strong> <code>@document.Id</code></p>
+                                <p><strong>Type:</strong> @document.MimeType</p>
+                                <p><strong>Size:</strong> @document.Size bytes</p>
+                                <p><strong>Shared:</strong> @(document.Shared ? "Yes" : "No")</p>
+                                <p><strong>Owners:</strong> @string.Join(", ", document.Owners)</p>
+                                @if (!string.IsNullOrEmpty(document.WebViewLink))
+                                {
+                                    <p><a href="@document.WebViewLink" target="_blank" class="btn btn-sm btn-outline-primary">View in Drive</a></p>
+                                }
+                            }
+                            else
+                            {
+                                <p class="text-danger"><strong>❌ Document Not Found</strong></p>
+                                <p class="small">The document might not be shared with the service account or doesn't exist.</p>
+                            }
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Sheet Data -->
+                <div class="col-md-4">
+                    <div class="card">
+                        <div class="card-header">
+                            <h5>Sheet Data</h5>
+                        </div>
+                        <div class="card-body">
+                            @if (sheetData != null)
+                            {
+                                <p><strong>✅ Sheet Data Retrieved</strong></p>
+                                <p><strong>Sheet Name:</strong> @sheetData.SheetName</p>
+                                <p><strong>Total Rows:</strong> @sheetData.TotalRows</p>
+                                <p><strong>Total Columns:</strong> @sheetData.TotalColumns</p>
+                                
+                                <h6>Headers:</h6>
+                                <ul class="list-group list-group-flush">
+                                    @foreach (var header in sheetData.Headers)
+                                    {
+                                        <li class="list-group-item small">@header</li>
+                                    }
+                                </ul>
+
+                                @if (sheetData.Rows.Any())
+                                {
+                                    <h6 class="mt-3">First Row Data:</h6>
+                                    <ul class="list-group list-group-flush">
+                                        @for (int i = 0; i < Math.Min(sheetData.Rows[0].Count, sheetData.Headers.Count); i++)
+                                        {
+                                            <li class="list-group-item small">
+                                                <strong>@sheetData.Headers[i]:</strong> @sheetData.Rows[0][i]
+                                            </li>
+                                        }
+                                    </ul>
+                                }
+                            }
+                            else
+                            {
+                                <p class="text-danger"><strong>❌ No Sheet Data</strong></p>
+                                <p class="small">Unable to retrieve sheet data. Check Google Sheets API access.</p>
+                            }
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Parsed Companies -->
+                <div class="col-md-4">
+                    <div class="card">
+                        <div class="card-header">
+                            <h5>Parsed Companies</h5>
+                        </div>
+                        <div class="card-body">
+                            @if (companies != null && companies.Any())
+                            {
+                                <p><strong>✅ Companies Parsed: @companies.Count</strong></p>
+                                
+                                @foreach (var company in companies.Take(5))
+                                {
+                                    <div class="border rounded p-2 mb-2 small">
+                                        <p><strong>Row @company.RowNumber:</strong> @company.Name</p>
+                                        @if (!string.IsNullOrEmpty(company.PlaceId))
+                                        {
+                                            <p><strong>Place ID:</strong> @company.PlaceId</p>
+                                        }
+                                        @if (!string.IsNullOrEmpty(company.Address))
+                                        {
+                                            <p><strong>Address:</strong> @company.Address</p>
+                                        }
+                                        @if (company.AlreadyExists)
+                                        {
+                                            <span class="badge bg-warning">Already Exists</span>
+                                        }
+                                    </div>
+                                }
+                                
+                                @if (companies.Count > 5)
+                                {
+                                    <p class="small text-muted">... and @(companies.Count - 5) more</p>
+                                }
+                            }
+                            else if (companies != null)
+                            {
+                                <p class="text-warning"><strong>⚠️ No Companies Found</strong></p>
+                                <p class="small">Sheet data was retrieved but no valid companies were parsed.</p>
+                            }
+                            else
+                            {
+                                <p class="text-danger"><strong>❌ Company Parsing Failed</strong></p>
+                                <p class="small">Unable to parse companies from the sheet.</p>
+                            }
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Raw Sheet Data Table -->
+            @if (sheetData != null && sheetData.Rows.Any())
+            {
+                <div class="card mt-4">
+                    <div class="card-header">
+                        <h5>Raw Sheet Data (First 10 Rows)</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="table-responsive">
+                            <table class="table table-sm table-bordered">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th>#</th>
+                                        @foreach (var header in sheetData.Headers)
+                                        {
+                                            <th class="small">@header</th>
+                                        }
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @for (int i = 0; i < Math.Min(10, sheetData.Rows.Count); i++)
+                                    {
+                                        <tr>
+                                            <td>@(i + 2)</td> <!-- +2 because row 1 is headers -->
+                                            @for (int j = 0; j < sheetData.Headers.Count; j++)
+                                            {
+                                                <td class="small">
+                                                    @(j < sheetData.Rows[i].Count ? sheetData.Rows[i][j] : "")
+                                                </td>
+                                            }
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            }
+
+            <div class="mt-3">
+                <a asp-action="Index" class="btn btn-secondary">Back to Documents</a>
+                <a asp-action="ImportFromSheet" asp-route-id="1P56tEmfFspFkSjORqkV2UauoGy3yDURg8iIKiaQSHE4" class="btn btn-primary">Try Import Again</a>
+            </div>
+        </div>
+    </div>
+</div>

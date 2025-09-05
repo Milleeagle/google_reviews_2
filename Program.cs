@@ -21,6 +21,7 @@ builder.Services.AddDefaultIdentity<IdentityUser>(options =>
 builder.Services.AddScoped<UserInitializationService>();
 builder.Services.AddHttpClient<IGooglePlacesService, GooglePlacesService>();
 builder.Services.AddScoped<IGooglePlacesService, GooglePlacesService>();
+builder.Services.AddScoped<IGoogleDriveService, GoogleDriveService>();
 
 // Add authorization policies
 builder.Services.AddAuthorization(options =>

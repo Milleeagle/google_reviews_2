@@ -1,0 +1,253 @@
+@{
+    ViewData["Title"] = "Google Place ID Finder";
+}
+
+<div class="container mt-4">
+    <div class="row">
+        <div class="col-md-12">
+            <h1>@ViewData["Title"]</h1>
+            
+            <nav aria-label="breadcrumb">
+                <ol class="breadcrumb">
+                    <li class="breadcrumb-item"><a asp-controller="Reviews" asp-action="Index">Reviews</a></li>
+                    <li class="breadcrumb-item active" aria-current="page">Place ID Finder</li>
+                </ol>
+            </nav>
+
+            <div class="alert alert-warning">
+                <h5><i class="fas fa-exclamation-triangle"></i> Setup Required</h5>
+                <p>Before using this tool, you need to enable the <strong>Maps JavaScript API</strong> in Google Cloud Console:</p>
+                <ol>
+                    <li>Go to <a href="https://console.cloud.google.com/apis/library/maps-backend.googleapis.com" target="_blank">Google Cloud Console</a></li>
+                    <li>Select your project: <code>sharp-memento-471211-t6</code></li>
+                    <li>Search for "Maps JavaScript API" and enable it</li>
+                    <li>Refresh this page after enabling</li>
+                </ol>
+            </div>
+
+            <div class="alert alert-info">
+                <h5><i class="fas fa-info-circle"></i> How to Use This Tool</h5>
+                <ol>
+                    <li><strong>Search for a business</strong> using the search box below</li>
+                    <li><strong>Click on the business</strong> in the search results or on the map</li>
+                    <li><strong>Copy the Place ID</strong> that appears</li>
+                    <li><strong>Update your company</strong> with the correct Place ID</li>
+                </ol>
+            </div>
+
+            <div class="row">
+                <div class="col-md-4">
+                    <div class="card">
+                        <div class="card-header">
+                            <h5>Search & Results</h5>
+                        </div>
+                        <div class="card-body">
+                            <div class="mb-3">
+                                <label for="pac-input" class="form-label">Search for a place</label>
+                                <input id="pac-input" class="form-control" type="text" placeholder="Enter a location">
+                            </div>
+                            
+                            <div id="infowindow-content">
+                                <img src="" width="16" height="16" id="place-icon">
+                                <span id="place-name" class="fw-bold"></span><br>
+                                <span id="place-address"></span>
+                            </div>
+
+                            <div class="mt-3">
+                                <label for="place-id" class="form-label">Place ID</label>
+                                <div class="input-group">
+                                    <input type="text" class="form-control" id="place-id" readonly>
+                                    <button class="btn btn-outline-secondary" type="button" onclick="copyPlaceId()">
+                                        <i class="fas fa-copy"></i> Copy
+                                    </button>
+                                </div>
+                                <div class="form-text">Click on a place to get its Place ID</div>
+                            </div>
+
+                            <div class="mt-3" id="update-section" style="display: none;">
+                                <h6>Update Company</h6>
+                                <select id="company-select" class="form-select mb-2">
+                                    <option value="">Select a company to update...</option>
+                                </select>
+                                <button type="button" class="btn btn-success w-100" onclick="updateCompanyPlaceId()">
+                                    <i class="fas fa-save"></i> Update Place ID
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-8">
+                    <div class="card">
+                        <div class="card-header">
+                            <h5>Map</h5>
+                        </div>
+                        <div class="card-body p-0">
+                            <div id="map" style="height: 500px; width: 100%;"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    let map;
+    let service;
+    let infowindow;
+
+    function initMap() {
+        const defaultLocation = { lat: 40.749933, lng: -73.98633 }; // New York
+
+        map = new google.maps.Map(document.getElementById("map"), {
+            center: defaultLocation,
+            zoom: 13,
+            mapTypeControl: false,
+        });
+
+        const card = document.getElementById("pac-card");
+        const input = document.getElementById("pac-input");
+        const biasInputElement = document.getElementById("use-location-bias");
+        const strictBoundsInputElement = document.getElementById("use-strict-bounds");
+        const options = {
+            fields: ["formatted_address", "geometry", "icon", "name", "place_id"],
+            strictBounds: false,
+        };
+
+        const autocomplete = new google.maps.places.Autocomplete(input, options);
+        autocomplete.bindTo("bounds", map);
+
+        const infowindow = new google.maps.InfoWindow();
+        const infowindowContent = document.getElementById("infowindow-content");
+        infowindow.setContent(infowindowContent);
+
+        const marker = new google.maps.Marker({
+            map,
+            anchorPoint: new google.maps.Point(0, -29),
+        });
+
+        autocomplete.addListener("place_changed", () => {
+            infowindow.close();
+            marker.setVisible(false);
+
+            const place = autocomplete.getPlace();
+
+            if (!place.geometry || !place.geometry.location) {
+                window.alert("No details available for input: '" + place.name + "'");
+                return;
+            }
+
+            // If the place has a geometry, then present it on a map.
+            if (place.geometry.viewport) {
+                map.fitBounds(place.geometry.viewport);
+            } else {
+                map.setCenter(place.geometry.location);
+                map.setZoom(17);
+            }
+
+            marker.setPosition(place.geometry.location);
+            marker.setVisible(true);
+
+            // Set the place details
+            document.getElementById("place-icon").src = place.icon;
+            document.getElementById("place-name").textContent = place.name;
+            document.getElementById("place-address").textContent = place.formatted_address;
+            document.getElementById("place-id").value = place.place_id;
+
+            // Show the update section
+            document.getElementById("update-section").style.display = "block";
+
+            infowindowContent.children["place-icon"].src = place.icon;
+            infowindowContent.children["place-name"].textContent = place.name;
+            infowindowContent.children["place-address"].textContent = place.formatted_address;
+            
+            infowindow.open(map, marker);
+        });
+    }
+
+    function copyPlaceId() {
+        const placeIdInput = document.getElementById("place-id");
+        if (placeIdInput.value) {
+            navigator.clipboard.writeText(placeIdInput.value).then(() => {
+                // Show success feedback
+                const button = event.target.closest('button');
+                const originalContent = button.innerHTML;
+                button.innerHTML = '<i class="fas fa-check"></i> Copied!';
+                button.classList.remove('btn-outline-secondary');
+                button.classList.add('btn-success');
+                
+                setTimeout(() => {
+                    button.innerHTML = originalContent;
+                    button.classList.remove('btn-success');
+                    button.classList.add('btn-outline-secondary');
+                }, 2000);
+            });
+        }
+    }
+
+    function updateCompanyPlaceId() {
+        const companyId = document.getElementById("company-select").value;
+        const placeId = document.getElementById("place-id").value;
+        
+        if (!companyId) {
+            alert("Please select a company to update.");
+            return;
+        }
+        
+        if (!placeId) {
+            alert("Please search for and select a place first.");
+            return;
+        }
+
+        // Make AJAX call to update the company
+        fetch('/Drive/UpdateCompanyPlaceId', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'RequestVerificationToken': document.querySelector('input[name="__RequestVerificationToken"]').value
+            },
+            body: JSON.stringify({
+                companyId: companyId,
+                placeId: placeId
+            })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                alert('Place ID updated successfully!');
+                // Optionally redirect to reviews page
+                window.location.href = '/Reviews';
+            } else {
+                alert('Error updating Place ID: ' + data.message);
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            alert('An error occurred while updating the Place ID.');
+        });
+    }
+
+    // Load companies for the dropdown
+    fetch('/api/companies')
+        .then(response => response.json())
+        .then(companies => {
+            const select = document.getElementById("company-select");
+            companies.forEach(company => {
+                const option = document.createElement("option");
+                option.value = company.id;
+                option.textContent = company.name;
+                select.appendChild(option);
+            });
+        })
+        .catch(error => {
+            console.error('Error loading companies:', error);
+        });
+
+    window.initMap = initMap;
+</script>
+
+<!-- Add anti-forgery token for AJAX calls -->
+@Html.AntiForgeryToken()
+
+<!-- Google Maps JavaScript API -->
+<script async defer src="https://maps.googleapis.com/maps/api/js?key=AIzaSyD7c3dDzJ9LeU915YCri4fGvgQGALCBauo&libraries=places&callback=initMap"></script>

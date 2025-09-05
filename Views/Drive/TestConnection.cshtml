@@ -1,0 +1,91 @@
+@{
+    ViewData["Title"] = "Test Google Drive Connection";
+    bool isConnected = ViewBag.DriveConnected ?? false;
+}
+
+<div class="container mt-4">
+    <div class="row justify-content-center">
+        <div class="col-md-8">
+            <h1>@ViewData["Title"]</h1>
+            
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="card-title">Google Drive API Connection Status</h5>
+                </div>
+                <div class="card-body">
+                    @if (isConnected)
+                    {
+                        <div class="alert alert-success">
+                            <h5><i class="bi bi-check-circle"></i> Connection Successful</h5>
+                            <p>Successfully connected to Google Drive API. The service account credentials are properly configured.</p>
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="alert alert-danger">
+                            <h5><i class="bi bi-x-circle"></i> Connection Failed</h5>
+                            <p>Could not connect to Google Drive API. Please check the service account configuration.</p>
+                        </div>
+                    }
+                    
+                    <h6>Configuration Requirements:</h6>
+                    <ul class="list-group list-group-flush">
+                        <li class="list-group-item">
+                            <strong>Service Account Credentials:</strong> Either set <code>GoogleDrive:ServiceAccountKeyPath</code> 
+                            to point to your service account JSON file, or set <code>GoogleDrive:ServiceAccountKeyJson</code> 
+                            with the JSON content directly.
+                        </li>
+                        <li class="list-group-item">
+                            <strong>API Access:</strong> Ensure the Google Drive API is enabled in your Google Cloud Console.
+                        </li>
+                        <li class="list-group-item">
+                            <strong>Document Sharing:</strong> Share documents with the service account email address to access them.
+                        </li>
+                    </ul>
+                </div>
+                <div class="card-footer">
+                    <a asp-action="Index" class="btn btn-primary">Back to Documents</a>
+                    <a asp-action="TestConnection" class="btn btn-outline-secondary">Retry Connection</a>
+                </div>
+            </div>
+
+            <div class="card mt-4">
+                <div class="card-header">
+                    <h6>Setup Instructions</h6>
+                </div>
+                <div class="card-body">
+                    <ol>
+                        <li>
+                            <strong>Create a Google Cloud Project</strong> and enable the Google Drive API
+                        </li>
+                        <li>
+                            <strong>Create a Service Account</strong> in the Google Cloud Console
+                        </li>
+                        <li>
+                            <strong>Download the service account JSON key</strong>
+                        </li>
+                        <li>
+                            <strong>Configure the application:</strong>
+                            <ul class="mt-2">
+                                <li>Either place the JSON file somewhere secure and set <code>GoogleDrive:ServiceAccountKeyPath</code> in appsettings.json or user secrets</li>
+                                <li>Or copy the entire JSON content and set <code>GoogleDrive:ServiceAccountKeyJson</code> in user secrets</li>
+                            </ul>
+                        </li>
+                        <li>
+                            <strong>Share documents</strong> with the service account email address (found in the JSON file)
+                        </li>
+                    </ol>
+                    
+                    <div class="mt-3">
+                        <h6>Example User Secrets Configuration:</h6>
+                        <pre class="bg-light p-3 rounded"><code>{
+  "GoogleDrive": {
+    "ServiceAccountKeyJson": "{ \"type\": \"service_account\", \"project_id\": \"...\", ... }"
+  }
+}</code></pre>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>

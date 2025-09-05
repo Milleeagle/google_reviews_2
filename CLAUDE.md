@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This is an ASP.NET Core 8.0 web application called `google_reviews` that provides user authentication and basic web functionality. The application uses Entity Framework Core with SQL Server for data persistence and ASP.NET Core Identity for user management.
+This is an ASP.NET Core 8.0 web application called `google_reviews_2` that implements a Google Reviews tracking system. The application provides user authentication, Google Places API integration, and comprehensive review management functionality for companies.
 
 ## Development Commands
 
@@ -18,31 +18,47 @@ This is an ASP.NET Core 8.0 web application called `google_reviews` that provide
 ## Architecture
 
 ### Core Structure
-- **Controllers/**: MVC controllers handling HTTP requests (currently only HomeController)
+- **Controllers/**: MVC controllers (HomeController, ReviewsController, AdminController, DiagnosticsController)
 - **Data/**: Entity Framework DbContext and database migrations
-- **Models/**: Data models and view models
-- **Views/**: Razor views organized by controller (Home/, Shared/)
+- **Models/**: Domain models (Company, Review) and view models (CreateUserViewModel, UserViewModel, GooglePlacesModels)
+- **Services/**: Business logic services (GooglePlacesService, UserInitializationService)
+- **Views/**: Razor views organized by controller
 - **Areas/Identity/**: ASP.NET Core Identity scaffolded pages for authentication
 
 ### Key Components
-- **ApplicationDbContext**: Inherits from IdentityDbContext, provides database access
-- **Program.cs**: Application startup configuration using minimal hosting model
-- **Identity Integration**: User registration/login requires email confirmation (`RequireConfirmedAccount = true`)
+- **ApplicationDbContext**: Inherits from IdentityDbContext, manages Companies and Reviews entities with optimized indexing
+- **GooglePlacesService**: Integrates with Google Places API for fetching review data
+- **ReviewsController**: Main controller for review management with authorization policies
+- **UserInitializationService**: Handles role creation and admin user setup
 
-### Database Configuration
-- Uses SQL Server with Entity Framework Core
-- Connection string configured in appsettings.json under "DefaultConnection"
-- Includes ASP.NET Core Identity schema for user management
+### Domain Models
+- **Company**: Represents businesses being tracked (Id, Name, PlaceId, GoogleMapsUrl, IsActive, LastUpdated)
+- **Review**: Individual Google reviews (Id, CompanyId, AuthorName, Rating, Text, Time, AuthorUrl, ProfilePhotoUrl)
+- Configured with proper Entity Framework relationships and cascade deletion
 
 ### Authentication & Authorization
-- ASP.NET Core Identity with IdentityUser
-- Email confirmation required for new accounts
-- User secrets configured for sensitive data (UserSecretsId in .csproj)
+- ASP.NET Core Identity with IdentityUser and IdentityRole
+- Role-based authorization with "Admin" and "User" roles
+- Email confirmation disabled for development (`RequireConfirmedAccount = false`)
+- Authorization policies: "AdminOnly" and "UserOrAdmin"
+- Admin-only features for adding companies and refreshing reviews
+
+### Google Places Integration
+- HttpClient-based service for Google Places API
+- Supports filtered review retrieval (date range, rating filters)
+- API connection testing functionality
+- Configured through user secrets or appsettings for API key storage
+
+### Database Configuration
+- SQL Server with Entity Framework Core
+- Connection string: `Server=(localdb)\\mssqllocaldb;Database=aspnet-google_reviews`
+- Optimized indexes on Company.PlaceId (unique), Review.CompanyId, and Review.Time
+- Cascade delete configured for Company-Review relationship
 
 ## Project Configuration
 
 - **Target Framework**: .NET 8.0
 - **Nullable Reference Types**: Enabled
 - **Implicit Usings**: Enabled
-- **Development Environment**: Configured in launchSettings.json
-- **Static Files**: Uses standard .NET 8.0 static file handling (`UseStaticFiles()`)
+- **User Secrets**: Configured for sensitive data (aspnet-google_reviews-e84ed60c-faea-43f4-9c5f-616e06badc64)
+- **Development URLs**: https://localhost:7019, http://localhost:5008

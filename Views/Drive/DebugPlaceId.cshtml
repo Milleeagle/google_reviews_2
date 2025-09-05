@@ -1,0 +1,177 @@
+@{
+    ViewData["Title"] = "Debug Place ID Extraction";
+    var company = ViewBag.Company as google_reviews.Models.Company;
+    var extractedPlaceId = ViewBag.ExtractedPlaceId as string;
+    var isValidExtracted = (bool)(ViewBag.IsValidExtracted ?? false);
+}
+
+<div class="container mt-4">
+    <div class="row">
+        <div class="col-md-12">
+            <h1>@ViewData["Title"]</h1>
+            
+            <nav aria-label="breadcrumb">
+                <ol class="breadcrumb">
+                    <li class="breadcrumb-item"><a asp-controller="Reviews" asp-action="Index">Reviews</a></li>
+                    <li class="breadcrumb-item active" aria-current="page">Debug Place ID</li>
+                </ol>
+            </nav>
+
+            @if (company != null)
+            {
+                <div class="card">
+                    <div class="card-header">
+                        <h4>Company: @company.Name</h4>
+                    </div>
+                    <div class="card-body">
+                        <div class="row">
+                            <div class="col-md-6">
+                                <h5>Current Data</h5>
+                                <table class="table table-sm">
+                                    <tr>
+                                        <th>Company ID:</th>
+                                        <td><code>@company.Id</code></td>
+                                    </tr>
+                                    <tr>
+                                        <th>Current Place ID:</th>
+                                        <td>
+                                            @if (!string.IsNullOrEmpty(company.PlaceId))
+                                            {
+                                                <code class="@(company.PlaceId.StartsWith("0x") || !company.PlaceId.StartsWith("ChIJ") ? "text-danger" : "text-success")">
+                                                    @company.PlaceId
+                                                </code>
+                                                @if (company.PlaceId.StartsWith("0x") || !company.PlaceId.StartsWith("ChIJ"))
+                                                {
+                                                    <span class="badge bg-danger ms-2">Invalid</span>
+                                                }
+                                                else
+                                                {
+                                                    <span class="badge bg-success ms-2">Valid</span>
+                                                }
+                                            }
+                                            else
+                                            {
+                                                <span class="text-muted">Not set</span>
+                                            }
+                                        </td>
+                                    </tr>
+                                    <tr>
+                                        <th>Google Maps URL:</th>
+                                        <td>
+                                            @if (!string.IsNullOrEmpty(company.GoogleMapsUrl))
+                                            {
+                                                <div class="mb-2">
+                                                    <a href="@company.GoogleMapsUrl" target="_blank" class="btn btn-sm btn-outline-primary">
+                                                        <i class="fas fa-external-link-alt"></i> Open URL
+                                                    </a>
+                                                </div>
+                                                <div class="small text-break">
+                                                    @company.GoogleMapsUrl
+                                                </div>
+                                            }
+                                            else
+                                            {
+                                                <span class="text-muted">Not set</span>
+                                            }
+                                        </td>
+                                    </tr>
+                                </table>
+                            </div>
+                            <div class="col-md-6">
+                                <h5>Extraction Results</h5>
+                                <table class="table table-sm">
+                                    <tr>
+                                        <th>Extracted Place ID:</th>
+                                        <td>
+                                            @if (!string.IsNullOrEmpty(extractedPlaceId))
+                                            {
+                                                <code class="@(isValidExtracted ? "text-success" : "text-danger")">
+                                                    @extractedPlaceId
+                                                </code>
+                                                @if (isValidExtracted)
+                                                {
+                                                    <span class="badge bg-success ms-2">Valid</span>
+                                                }
+                                                else
+                                                {
+                                                    <span class="badge bg-danger ms-2">Invalid</span>
+                                                }
+                                            }
+                                            else
+                                            {
+                                                <span class="text-warning">None found</span>
+                                                <span class="badge bg-warning ms-2">No Match</span>
+                                            }
+                                        </td>
+                                    </tr>
+                                    <tr>
+                                        <th>Can Extract Valid ID:</th>
+                                        <td>
+                                            @if (isValidExtracted)
+                                            {
+                                                <span class="text-success">✅ Yes</span>
+                                            }
+                                            else
+                                            {
+                                                <span class="text-danger">❌ No</span>
+                                            }
+                                        </td>
+                                    </tr>
+                                    <tr>
+                                        <th>Needs Manual Fix:</th>
+                                        <td>
+                                            @if (!isValidExtracted)
+                                            {
+                                                <span class="text-warning">⚠️ Yes - URL may not contain valid Place ID</span>
+                                            }
+                                            else
+                                            {
+                                                <span class="text-success">✅ No - Can be auto-fixed</span>
+                                            }
+                                        </td>
+                                    </tr>
+                                </table>
+                            </div>
+                        </div>
+
+                        @if (isValidExtracted && company.PlaceId != extractedPlaceId)
+                        {
+                            <div class="alert alert-info mt-3">
+                                <h6><i class="fas fa-info-circle"></i> Action Available</h6>
+                                <p>A valid Place ID can be extracted from the URL. You can use the "Extract Place IDs" button on the Reviews page to fix this automatically.</p>
+                            </div>
+                        }
+                        else if (!isValidExtracted && !string.IsNullOrEmpty(company.GoogleMapsUrl))
+                        {
+                            <div class="alert alert-warning mt-3">
+                                <h6><i class="fas fa-exclamation-triangle"></i> Manual Intervention Required</h6>
+                                <p>No valid Place ID could be extracted from the Google Maps URL. You may need to:</p>
+                                <ul class="mb-0">
+                                    <li>Find a different Google Maps URL for this location</li>
+                                    <li>Manually look up the Place ID using Google Places API</li>
+                                    <li>Check if the URL is a direct business link rather than a maps link</li>
+                                </ul>
+                            </div>
+                        }
+                        else if (string.IsNullOrEmpty(company.GoogleMapsUrl))
+                        {
+                            <div class="alert alert-secondary mt-3">
+                                <h6><i class="fas fa-link"></i> Missing Google Maps URL</h6>
+                                <p>This company doesn't have a Google Maps URL set, so no Place ID can be extracted.</p>
+                            </div>
+                        }
+                    </div>
+                    <div class="card-footer">
+                        <a asp-controller="Reviews" asp-action="Index" class="btn btn-secondary">Back to Reviews</a>
+                        @if (isValidExtracted)
+                        {
+                            <a asp-controller="Drive" asp-action="ExtractPlaceIds" class="btn btn-primary ms-2">
+                                <i class="fas fa-sync"></i> Extract Place IDs (Fix This)
+                            </a>
+                        }
+                    </div>
+                </div>
+            }
+        </div>
+    </div>
+</div>

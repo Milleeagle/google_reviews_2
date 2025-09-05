@@ -1,4 +1,4 @@
-using Microsoft.AspNetCore.Authorization;
+ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using google_reviews.Data;
@@ -215,6 +215,82 @@ namespace google_reviews.Controllers
             ViewBag.ApiKeyValue = string.IsNullOrEmpty(apiKey) ? "Not set" : $"{apiKey.Substring(0, 10)}...";
             
             return View();
+        }
+
+        // GET: Reviews/ReviewMonitor
+        [Authorize(Roles = "Admin")]
+        public IActionResult ReviewMonitor()
+        {
+            return View();
+        }
+
+        // POST: Reviews/GenerateReviewReport
+        [HttpPost]
+        [ValidateAntiForgeryToken]
+        [Authorize(Roles = "Admin")]
+        public async Task<IActionResult> GenerateReviewReport(DateTime fromDate, DateTime toDate, int maxRating = 3)
+        {
+            try
+            {
+                var companies = await _context.Companies
+                    .Where(c => c.IsActive && !string.IsNullOrEmpty(c.PlaceId))
+                    .ToListAsync();
+
+                var reportData = new List<CompanyReviewReport>();
+                
+                foreach (var company in companies)
+                {
+                    try
+                    {
+                        var reviewData = await _googlePlacesService.GetFilteredReviewsAsync(
+                            company, fromDate, toDate, null, maxRating);
+                        
+                        if (reviewData?.Reviews?.Any() == true)
+                        {
+                            var badReviews = reviewData.Reviews
+                                .Where(r => r.Rating <= maxRating && r.Time >= fromDate && r.Time <= toDate)
+                                .OrderBy(r => r.Rating)
+                                .ThenByDescending(r => r.Time)
+                                .ToList();
+
+                            if (badReviews.Any())
+                            {
+                                reportData.Add(new CompanyReviewReport
+                                {
+                                    Company = company,
+                                    BadReviews = badReviews,
+                                    AverageRating = badReviews.Average(r => r.Rating),
+                                    TotalBadReviews = badReviews.Count
+                                });
+                            }
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, $"Error fetching reviews for company {company.Name}");
+                    }
+                }
+
+                var report = new ReviewMonitorReport
+                {
+                    FromDate = fromDate,
+                    ToDate = toDate,
+                    MaxRating = maxRating,
+                    CompanyReports = reportData.OrderBy(r => r.AverageRating).ToList(),
+                    GeneratedAt = DateTime.UtcNow,
+                    TotalCompaniesChecked = companies.Count,
+                    CompaniesWithIssues = reportData.Count,
+                    TotalBadReviews = reportData.Sum(r => r.TotalBadReviews)
+                };
+
+                return View("ReviewReport", report);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error generating review report");
+                TempData["Error"] = "An error occurred while generating the review report.";
+                return RedirectToAction(nameof(ReviewMonitor));
+            }
         }
     }
 }

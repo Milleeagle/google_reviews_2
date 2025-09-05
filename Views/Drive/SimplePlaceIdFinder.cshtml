@@ -1,0 +1,242 @@
+@{
+    ViewData["Title"] = "Simple Place ID Finder";
+}
+
+<div class="container mt-4">
+    <div class="row">
+        <div class="col-md-12">
+            <h1>@ViewData["Title"]</h1>
+            
+            <nav aria-label="breadcrumb">
+                <ol class="breadcrumb">
+                    <li class="breadcrumb-item"><a asp-controller="Reviews" asp-action="Index">Reviews</a></li>
+                    <li class="breadcrumb-item active" aria-current="page">Place ID Finder</li>
+                </ol>
+            </nav>
+
+            <div class="alert alert-info">
+                <h5><i class="fas fa-info-circle"></i> How to Find Place IDs</h5>
+                <p>Since the Maps JavaScript API requires additional setup, here are alternative methods to find Place IDs:</p>
+            </div>
+
+            <div class="row">
+                <div class="col-md-6">
+                    <div class="card">
+                        <div class="card-header">
+                            <h5>Method 1: Google's Official Place ID Finder</h5>
+                        </div>
+                        <div class="card-body">
+                            <p>Use Google's official Place ID Finder tool:</p>
+                            <ol>
+                                <li>Open <a href="https://developers.google.com/maps/documentation/javascript/examples/places-placeid-finder" target="_blank" class="btn btn-sm btn-outline-primary">Google Place ID Finder</a></li>
+                                <li>Search for your business</li>
+                                <li>Click on the business to get the Place ID</li>
+                                <li>Copy the Place ID (starts with ChIJ)</li>
+                                <li>Come back here to update your company</li>
+                            </ol>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="col-md-6">
+                    <div class="card">
+                        <div class="card-header">
+                            <h5>Method 2: Google Search</h5>
+                        </div>
+                        <div class="card-body">
+                            <p>Find Place ID through Google Search:</p>
+                            <ol>
+                                <li>Search for your business on <a href="https://google.com" target="_blank">Google.com</a></li>
+                                <li>Click on the business in the results</li>
+                                <li>Look at the URL in the browser</li>
+                                <li>Find the Place ID in the URL (starts with ChIJ)</li>
+                                <li>Copy it and update your company below</li>
+                            </ol>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card mt-4">
+                <div class="card-header">
+                    <h5>Update Company Place ID</h5>
+                </div>
+                <div class="card-body">
+                    <form id="updatePlaceIdForm">
+                        <div class="row">
+                            <div class="col-md-4">
+                                <label for="company-select" class="form-label">Select Company</label>
+                                <select id="company-select" class="form-select" required>
+                                    <option value="">Loading companies...</option>
+                                </select>
+                            </div>
+                            <div class="col-md-6">
+                                <label for="place-id-input" class="form-label">Place ID</label>
+                                <input type="text" id="place-id-input" class="form-control" placeholder="Enter Place ID (starts with ChIJ)" required>
+                                <div class="form-text">Example: ChIJN1t_tDeuEmsRUsoyG83frY4</div>
+                            </div>
+                            <div class="col-md-2">
+                                <label class="form-label">&nbsp;</label>
+                                <button type="submit" class="btn btn-success w-100">
+                                    <i class="fas fa-save"></i> Update
+                                </button>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+            </div>
+
+            <div class="card mt-4">
+                <div class="card-header">
+                    <h5>Current Companies</h5>
+                </div>
+                <div class="card-body">
+                    <div id="companies-list">
+                        <div class="text-center">
+                            <div class="spinner-border text-primary" role="status">
+                                <span class="visually-hidden">Loading...</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    let companies = [];
+
+    // Load companies
+    async function loadCompanies() {
+        try {
+            const response = await fetch('/api/companies');
+            if (!response.ok) {
+                throw new Error('Failed to load companies');
+            }
+            companies = await response.json();
+            
+            // Update dropdown
+            const select = document.getElementById('company-select');
+            select.innerHTML = '<option value="">Select a company...</option>';
+            companies.forEach(company => {
+                const option = document.createElement('option');
+                option.value = company.id;
+                option.textContent = company.name;
+                if (company.placeId) {
+                    option.textContent += ' (Has Place ID)';
+                }
+                select.appendChild(option);
+            });
+
+            // Update companies list
+            displayCompaniesList();
+        } catch (error) {
+            console.error('Error loading companies:', error);
+            document.getElementById('company-select').innerHTML = '<option value="">Error loading companies</option>';
+            document.getElementById('companies-list').innerHTML = '<div class="alert alert-danger">Error loading companies</div>';
+        }
+    }
+
+    function displayCompaniesList() {
+        const container = document.getElementById('companies-list');
+        
+        if (companies.length === 0) {
+            container.innerHTML = '<div class="alert alert-info">No companies found</div>';
+            return;
+        }
+
+        const table = document.createElement('table');
+        table.className = 'table table-striped';
+        table.innerHTML = `
+            <thead>
+                <tr>
+                    <th>Company Name</th>
+                    <th>Current Place ID</th>
+                    <th>Status</th>
+                </tr>
+            </thead>
+            <tbody>
+                ${companies.map(company => `
+                    <tr>
+                        <td>${company.name}</td>
+                        <td>
+                            ${company.placeId ? 
+                                `<code class="small ${company.placeId.startsWith('ChIJ') ? 'text-success' : 'text-danger'}">${company.placeId}</code>` : 
+                                '<span class="text-muted">Not set</span>'
+                            }
+                        </td>
+                        <td>
+                            ${company.placeId ? 
+                                (company.placeId.startsWith('ChIJ') ? 
+                                    '<span class="badge bg-success">Valid</span>' : 
+                                    '<span class="badge bg-danger">Invalid</span>'
+                                ) : 
+                                '<span class="badge bg-warning">Missing</span>'
+                            }
+                        </td>
+                    </tr>
+                `).join('')}
+            </tbody>
+        `;
+        
+        container.innerHTML = '';
+        container.appendChild(table);
+    }
+
+    // Handle form submission
+    document.getElementById('updatePlaceIdForm').addEventListener('submit', async function(e) {
+        e.preventDefault();
+        
+        const companyId = document.getElementById('company-select').value;
+        const placeId = document.getElementById('place-id-input').value.trim();
+        
+        if (!companyId) {
+            alert('Please select a company');
+            return;
+        }
+        
+        if (!placeId) {
+            alert('Please enter a Place ID');
+            return;
+        }
+        
+        if (!placeId.startsWith('ChIJ')) {
+            if (!confirm('The Place ID doesn\'t start with "ChIJ". Are you sure this is correct?')) {
+                return;
+            }
+        }
+
+        try {
+            const response = await fetch('/Drive/UpdateCompanyPlaceId', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'RequestVerificationToken': document.querySelector('input[name="__RequestVerificationToken"]').value
+                },
+                body: JSON.stringify({
+                    companyId: companyId,
+                    placeId: placeId
+                })
+            });
+
+            const result = await response.json();
+            
+            if (result.success) {
+                alert('Place ID updated successfully!');
+                document.getElementById('place-id-input').value = '';
+                loadCompanies(); // Refresh the list
+            } else {
+                alert('Error: ' + result.message);
+            }
+        } catch (error) {
+            console.error('Error:', error);
+            alert('An error occurred while updating the Place ID');
+        }
+    });
+
+    // Load companies on page load
+    loadCompanies();
+</script>
+
+@Html.AntiForgeryToken()

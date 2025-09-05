@@ -1,0 +1,214 @@
+@{
+    ViewData["Title"] = "Review Monitor";
+}
+
+<div class="container mt-4">
+    <div class="row">
+        <div class="col-md-12">
+            <h1>@ViewData["Title"]</h1>
+            
+            <nav aria-label="breadcrumb">
+                <ol class="breadcrumb">
+                    <li class="breadcrumb-item"><a asp-action="Index">Reviews</a></li>
+                    <li class="breadcrumb-item active" aria-current="page">Review Monitor</li>
+                </ol>
+            </nav>
+
+            <div class="alert alert-info">
+                <h5><i class="fas fa-info-circle"></i> Review Monitoring</h5>
+                <p>This tool searches all your companies for bad reviews within a specified time period and generates a compiled report of issues that need attention.</p>
+                <ul>
+                    <li>Select a date range to search</li>
+                    <li>Set the maximum star rating to filter bad reviews (1-5 stars)</li>
+                    <li>Get a detailed report of companies with review issues</li>
+                </ul>
+            </div>
+
+            @if (TempData["Success"] != null)
+            {
+                <div class="alert alert-success alert-dismissible fade show" role="alert">
+                    @TempData["Success"]
+                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                </div>
+            }
+
+            @if (TempData["Error"] != null)
+            {
+                <div class="alert alert-danger alert-dismissible fade show" role="alert">
+                    @TempData["Error"]
+                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                </div>
+            }
+
+            <div class="card">
+                <div class="card-header">
+                    <h5><i class="fas fa-chart-line"></i> Generate Review Report</h5>
+                </div>
+                <div class="card-body">
+                    <form asp-action="GenerateReviewReport" method="post" id="reviewReportForm">
+                        @Html.AntiForgeryToken()
+                        
+                        <div class="row">
+                            <div class="col-md-4">
+                                <div class="mb-3">
+                                    <label for="fromDate" class="form-label">From Date <span class="text-danger">*</span></label>
+                                    <input type="date" class="form-control" id="fromDate" name="fromDate" required 
+                                           value="@DateTime.Now.AddDays(-7).ToString("yyyy-MM-dd")">
+                                    <div class="form-text">Start date for review search</div>
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="mb-3">
+                                    <label for="toDate" class="form-label">To Date <span class="text-danger">*</span></label>
+                                    <input type="date" class="form-control" id="toDate" name="toDate" required 
+                                           value="@DateTime.Now.ToString("yyyy-MM-dd")">
+                                    <div class="form-text">End date for review search</div>
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="mb-3">
+                                    <label for="maxRating" class="form-label">Maximum Rating (Bad Reviews) <span class="text-danger">*</span></label>
+                                    <select class="form-select" id="maxRating" name="maxRating" required>
+                                        <option value="1">1 Star and below</option>
+                                        <option value="2">2 Stars and below</option>
+                                        <option value="3" selected>3 Stars and below</option>
+                                        <option value="4">4 Stars and below</option>
+                                        <option value="5">5 Stars and below (All reviews)</option>
+                                    </select>
+                                    <div class="form-text">Reviews with this rating or lower will be flagged</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="row">
+                            <div class="col-md-12">
+                                <div class="d-flex gap-2">
+                                    <button type="submit" class="btn btn-warning" id="generateReportBtn">
+                                        <i class="fas fa-search"></i> Generate Report
+                                    </button>
+                                    <button type="button" class="btn btn-secondary" onclick="setQuickRange('today')">Today</button>
+                                    <button type="button" class="btn btn-secondary" onclick="setQuickRange('week')">Last 7 Days</button>
+                                    <button type="button" class="btn btn-secondary" onclick="setQuickRange('month')">Last 30 Days</button>
+                                </div>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+            </div>
+
+            <div class="card mt-4">
+                <div class="card-header">
+                    <h5><i class="fas fa-building"></i> Active Companies</h5>
+                </div>
+                <div class="card-body">
+                    <div id="companies-summary">
+                        <div class="text-center">
+                            <div class="spinner-border text-primary" role="status">
+                                <span class="visually-hidden">Loading...</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    // Set quick date ranges
+    function setQuickRange(range) {
+        const fromDate = document.getElementById('fromDate');
+        const toDate = document.getElementById('toDate');
+        const now = new Date();
+        
+        switch(range) {
+            case 'today':
+                fromDate.value = now.toISOString().split('T')[0];
+                toDate.value = now.toISOString().split('T')[0];
+                break;
+            case 'week':
+                const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+                fromDate.value = weekAgo.toISOString().split('T')[0];
+                toDate.value = now.toISOString().split('T')[0];
+                break;
+            case 'month':
+                const monthAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+                fromDate.value = monthAgo.toISOString().split('T')[0];
+                toDate.value = now.toISOString().split('T')[0];
+                break;
+        }
+    }
+
+    // Load company summary
+    async function loadCompaniesSummary() {
+        try {
+            const response = await fetch('/api/companies');
+            if (!response.ok) {
+                throw new Error('Failed to load companies');
+            }
+            const companies = await response.json();
+            
+            const container = document.getElementById('companies-summary');
+            
+            if (companies.length === 0) {
+                container.innerHTML = '<div class="alert alert-info">No active companies found. Add companies first before generating reports.</div>';
+                return;
+            }
+
+            const companiesWithPlaceId = companies.filter(c => c.placeId);
+            const companiesWithoutPlaceId = companies.filter(c => !c.placeId);
+
+            container.innerHTML = `
+                <div class="row">
+                    <div class="col-md-4">
+                        <div class="card bg-primary text-white">
+                            <div class="card-body text-center">
+                                <h3>${companies.length}</h3>
+                                <p class="mb-0">Total Companies</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="card bg-success text-white">
+                            <div class="card-body text-center">
+                                <h3>${companiesWithPlaceId.length}</h3>
+                                <p class="mb-0">Ready for Monitoring</p>
+                                <small>(Have Place IDs)</small>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="card bg-warning text-white">
+                            <div class="card-body text-center">
+                                <h3>${companiesWithoutPlaceId.length}</h3>
+                                <p class="mb-0">Missing Place IDs</p>
+                                <small>(Cannot be monitored)</small>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                ${companiesWithoutPlaceId.length > 0 ? `
+                    <div class="alert alert-warning mt-3">
+                        <strong>Note:</strong> ${companiesWithoutPlaceId.length} companies don't have Place IDs and won't be included in reports. 
+                        <a href="/Drive/SimplePlaceIdFinder" class="btn btn-sm btn-outline-warning ms-2">
+                            <i class="fas fa-map-marker-alt"></i> Set Place IDs
+                        </a>
+                    </div>
+                ` : ''}
+            `;
+        } catch (error) {
+            console.error('Error loading companies:', error);
+            document.getElementById('companies-summary').innerHTML = '<div class="alert alert-danger">Error loading companies summary</div>';
+        }
+    }
+
+    // Form submission with loading state
+    document.getElementById('reviewReportForm').addEventListener('submit', function() {
+        const btn = document.getElementById('generateReportBtn');
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Generating Report...';
+        btn.disabled = true;
+    });
+
+    // Load companies on page load
+    loadCompaniesSummary();
+</script>
