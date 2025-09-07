@@ -1,0 +1,281 @@
+@model List<google_reviews.Models.ScheduledReviewMonitor>
+@{
+    ViewData["Title"] = "Scheduled Review Monitors";
+    var emailConfigured = ViewBag.EmailConfigured as bool? ?? false;
+}
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2>@ViewData["Title"]</h2>
+    <div class="btn-group" role="group">
+        @if (!emailConfigured)
+        {
+            <button type="button" class="btn btn-warning" data-bs-toggle="modal" data-bs-target="#emailConfigModal">
+                <i class="fas fa-exclamation-triangle"></i> Configure Email First
+            </button>
+        }
+        <a asp-action="Create" class="btn btn-primary @(emailConfigured ? "" : "disabled")">
+            <i class="fas fa-plus"></i> Create Scheduled Monitor
+        </a>
+        <button type="button" class="btn btn-outline-secondary" onclick="refreshPage()">
+            <i class="fas fa-sync-alt"></i> Refresh
+        </button>
+    </div>
+</div>
+
+@if (TempData["Success"] != null)
+{
+    <div class="alert alert-success alert-dismissible fade show" role="alert">
+        @TempData["Success"]
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+}
+
+@if (TempData["Error"] != null)
+{
+    <div class="alert alert-danger alert-dismissible fade show" role="alert">
+        @TempData["Error"]
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+}
+
+@if (!emailConfigured)
+{
+    <div class="alert alert-warning">
+        <h5><i class="fas fa-exclamation-triangle"></i> Email Configuration Required</h5>
+        <p>Before you can create scheduled monitors, you need to configure email settings in your application configuration.</p>
+        <p>Add the following to your <code>appsettings.json</code> or user secrets:</p>
+        <pre><code>{
+  "Email": {
+    "SmtpHost": "smtp.gmail.com",
+    "SmtpPort": "587",
+    "SmtpUsername": "your-email@gmail.com",
+    "SmtpPassword": "your-app-password",
+    "FromEmail": "your-email@gmail.com",
+    "FromName": "Review Monitor"
+  }
+}</code></pre>
+    </div>
+}
+
+@if (Model.Any())
+{
+    <div class="row">
+        @foreach (var monitor in Model)
+        {
+            <div class="col-md-6 col-lg-4 mb-4">
+                <div class="card h-100 @(monitor.IsActive ? "border-success" : "border-secondary")">
+                    <div class="card-header @(monitor.IsActive ? "bg-success" : "bg-secondary") text-white">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <h5 class="mb-0">
+                                <i class="fas @(monitor.IsActive ? "fa-play" : "fa-pause")"></i>
+                                @monitor.Name
+                            </h5>
+                            <span class="badge @(monitor.IsActive ? "bg-light text-dark" : "bg-dark")">
+                                @monitor.ScheduleType.ToString()
+                            </span>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <p class="card-text">
+                            @if (!string.IsNullOrEmpty(monitor.Description))
+                            {
+                                @monitor.Description
+                            }
+                            else
+                            {
+                                <em>No description</em>
+                            }
+                        </p>
+                        
+                        <div class="mb-3">
+                            <small class="text-muted">
+                                <i class="fas fa-envelope"></i> @monitor.EmailAddress<br>
+                                <i class="fas fa-star"></i> @monitor.MaxRating stars and below<br>
+                                <i class="fas fa-calendar"></i> Last @monitor.ReviewPeriodDays days<br>
+                                <i class="fas fa-building"></i> 
+                                @if (monitor.IncludeAllCompanies)
+                                {
+                                    <span>All companies</span>
+                                }
+                                else
+                                {
+                                    <span>@monitor.Companies.Count selected companies</span>
+                                }
+                            </small>
+                        </div>
+
+                        @if (monitor.IsActive)
+                        {
+                            <div class="alert alert-info py-2 px-3 mb-3">
+                                <small>
+                                    <strong>Next run:</strong><br>
+                                    @monitor.NextRunAt.ToString("MMM dd, yyyy HH:mm")
+                                </small>
+                            </div>
+                        }
+
+                        <div class="mb-2">
+                            <small class="text-muted">
+                                <strong>Schedule:</strong>
+                                @switch (monitor.ScheduleType)
+                                {
+                                    case google_reviews.Models.ScheduleType.Daily:
+                                        <span>Daily at @monitor.ScheduleTime.ToString(@"hh\:mm")</span>
+                                        break;
+                                    case google_reviews.Models.ScheduleType.Weekly:
+                                        <span>Weekly on @monitor.DayOfWeek at @monitor.ScheduleTime.ToString(@"hh\:mm")</span>
+                                        break;
+                                    case google_reviews.Models.ScheduleType.Monthly:
+                                        <span>Monthly on day @monitor.DayOfMonth at @monitor.ScheduleTime.ToString(@"hh\:mm")</span>
+                                        break;
+                                }
+                            </small>
+                        </div>
+
+                        <div class="mb-2">
+                            <small class="text-muted">
+                                <i class="fas fa-clock"></i>
+                                Created: @monitor.CreatedAt.ToString("MMM dd, yyyy")
+                                @if (monitor.LastRunAt != default)
+                                {
+                                    <br><i class="fas fa-play-circle"></i>
+                                    @:Last run: @monitor.LastRunAt.ToString("MMM dd, yyyy HH:mm")
+                                }
+                            </small>
+                        </div>
+                    </div>
+                    <div class="card-footer">
+                        <div class="btn-group w-100" role="group">
+                            <a asp-action="Edit" asp-route-id="@monitor.Id" class="btn btn-outline-primary btn-sm">
+                                <i class="fas fa-edit"></i> Edit
+                            </a>
+                            <a asp-action="History" asp-route-id="@monitor.Id" class="btn btn-outline-info btn-sm">
+                                <i class="fas fa-history"></i> History
+                            </a>
+                            <form asp-action="ToggleActive" asp-route-id="@monitor.Id" method="post" class="d-inline">
+                                @Html.AntiForgeryToken()
+                                <button type="submit" class="btn btn-outline-@(monitor.IsActive ? "warning" : "success") btn-sm">
+                                    <i class="fas fa-@(monitor.IsActive ? "pause" : "play")"></i>
+                                    @(monitor.IsActive ? "Pause" : "Activate")
+                                </button>
+                            </form>
+                        </div>
+                        <div class="btn-group w-100 mt-2" role="group">
+                            <button type="button" class="btn btn-outline-secondary btn-sm" onclick="testEmail('@monitor.EmailAddress')">
+                                <i class="fas fa-envelope"></i> Test Email
+                            </button>
+                            <button type="button" class="btn btn-outline-danger btn-sm" onclick="confirmDelete('@monitor.Id', '@monitor.Name')">
+                                <i class="fas fa-trash"></i> Delete
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        }
+    </div>
+}
+else
+{
+    <div class="text-center py-5">
+        <i class="fas fa-clock fa-3x text-muted mb-3"></i>
+        <h4 class="text-muted">No Scheduled Monitors</h4>
+        <p class="text-muted">Create your first scheduled monitor to automatically track review issues and receive email reports.</p>
+        @if (emailConfigured)
+        {
+            <a asp-action="Create" class="btn btn-primary">
+                <i class="fas fa-plus"></i> Create Your First Monitor
+            </a>
+        }
+    </div>
+}
+
+<!-- Delete Confirmation Modal -->
+<div class="modal fade" id="deleteModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Confirm Delete</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p>Are you sure you want to delete the monitor "<span id="deleteMonitorName"></span>"?</p>
+                <p class="text-danger"><strong>This action cannot be undone.</strong></p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <form id="deleteForm" method="post" class="d-inline">
+                    @Html.AntiForgeryToken()
+                    <button type="submit" class="btn btn-danger">Delete Monitor</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Email Config Modal -->
+<div class="modal fade" id="emailConfigModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Email Configuration Required</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p>To use scheduled monitors, you need to configure email settings. Add this configuration to your <code>appsettings.json</code>:</p>
+                <pre><code>{
+  "Email": {
+    "SmtpHost": "smtp.gmail.com",
+    "SmtpPort": "587", 
+    "SmtpUsername": "your-email@gmail.com",
+    "SmtpPassword": "your-app-password",
+    "FromEmail": "your-email@gmail.com",
+    "FromName": "Review Monitor"
+  }
+}</code></pre>
+                <div class="alert alert-info mt-3">
+                    <h6>For Gmail:</h6>
+                    <ol>
+                        <li>Enable 2-factor authentication</li>
+                        <li>Generate an "App Password" in your Google Account settings</li>
+                        <li>Use the app password as SmtpPassword</li>
+                    </ol>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    function confirmDelete(monitorId, monitorName) {
+        document.getElementById('deleteMonitorName').textContent = monitorName;
+        document.getElementById('deleteForm').action = '/ScheduledMonitor/Delete/' + monitorId;
+        new bootstrap.Modal(document.getElementById('deleteModal')).show();
+    }
+
+    async function testEmail(email) {
+        try {
+            const formData = new FormData();
+            formData.append('email', email);
+            formData.append('__RequestVerificationToken', document.querySelector('input[name="__RequestVerificationToken"]').value);
+
+            const response = await fetch('/ScheduledMonitor/TestEmail', {
+                method: 'POST',
+                body: formData
+            });
+
+            const result = await response.json();
+            
+            if (result.success) {
+                alert('✅ ' + result.message);
+            } else {
+                alert('❌ ' + result.message);
+            }
+        } catch (error) {
+            alert('❌ Error sending test email: ' + error.message);
+        }
+    }
+
+    function refreshPage() {
+        location.reload();
+    }
+</script>

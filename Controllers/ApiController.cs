@@ -31,7 +31,7 @@ namespace google_reviews.Controllers
 
                 return Ok(companies);
             }
-            catch (Exception ex)
+            catch (Exception)
             {
                 return StatusCode(500, new { error = "An error occurred while retrieving companies." });
             }

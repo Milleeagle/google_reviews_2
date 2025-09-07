@@ -22,6 +22,9 @@ builder.Services.AddScoped<UserInitializationService>();
 builder.Services.AddHttpClient<IGooglePlacesService, GooglePlacesService>();
 builder.Services.AddScoped<IGooglePlacesService, GooglePlacesService>();
 builder.Services.AddScoped<IGoogleDriveService, GoogleDriveService>();
+builder.Services.AddScoped<IEmailService, EmailService>();
+builder.Services.AddScoped<IScheduledMonitorService, ScheduledMonitorService>();
+builder.Services.AddHostedService<ScheduledMonitorBackgroundService>();
 
 // Add authorization policies
 builder.Services.AddAuthorization(options =>

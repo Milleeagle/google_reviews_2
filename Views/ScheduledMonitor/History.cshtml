@@ -1,0 +1,292 @@
+@model List<google_reviews.Models.ScheduledMonitorExecution>
+@{
+    ViewData["Title"] = "Execution History";
+    var monitor = ViewBag.Monitor as google_reviews.Models.ScheduledReviewMonitor;
+}
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h2>@ViewData["Title"]</h2>
+        <h4 class="text-muted">@monitor?.Name</h4>
+    </div>
+    <a asp-action="Index" class="btn btn-outline-secondary">
+        <i class="fas fa-arrow-left"></i> Back to Monitors
+    </a>
+</div>
+
+<nav aria-label="breadcrumb">
+    <ol class="breadcrumb">
+        <li class="breadcrumb-item"><a asp-action="Index">Scheduled Monitors</a></li>
+        <li class="breadcrumb-item active" aria-current="page">@(monitor?.Name ?? "History")</li>
+    </ol>
+</nav>
+
+@if (monitor != null)
+{
+    <div class="card mb-4">
+        <div class="card-header">
+            <h5><i class="fas fa-info-circle"></i> Monitor Details</h5>
+        </div>
+        <div class="card-body">
+            <div class="row">
+                <div class="col-md-3">
+                    <strong>Schedule:</strong><br>
+                    @switch (monitor.ScheduleType)
+                    {
+                        case google_reviews.Models.ScheduleType.Daily:
+                            <span>Daily at @monitor.ScheduleTime.ToString(@"hh\:mm")</span>
+                            break;
+                        case google_reviews.Models.ScheduleType.Weekly:
+                            <span>Weekly on @monitor.DayOfWeek at @monitor.ScheduleTime.ToString(@"hh\:mm")</span>
+                            break;
+                        case google_reviews.Models.ScheduleType.Monthly:
+                            <span>Monthly on day @monitor.DayOfMonth at @monitor.ScheduleTime.ToString(@"hh\:mm")</span>
+                            break;
+                    }
+                </div>
+                <div class="col-md-3">
+                    <strong>Criteria:</strong><br>
+                    <span>@monitor.MaxRating stars and below</span><br>
+                    <span>Last @monitor.ReviewPeriodDays days</span>
+                </div>
+                <div class="col-md-3">
+                    <strong>Email:</strong><br>
+                    <span>@monitor.EmailAddress</span>
+                </div>
+                <div class="col-md-3">
+                    <strong>Status:</strong><br>
+                    <span class="badge @(monitor.IsActive ? "bg-success" : "bg-secondary")">
+                        @(monitor.IsActive ? "Active" : "Inactive")
+                    </span><br>
+                    @if (monitor.IsActive)
+                    {
+                        <small class="text-muted">Next run: @monitor.NextRunAt.ToString("MMM dd, HH:mm")</small>
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@if (Model.Any())
+{
+    <div class="card">
+        <div class="card-header">
+            <h5><i class="fas fa-history"></i> Execution History</h5>
+            <small class="text-muted">Showing last @Model.Count executions</small>
+        </div>
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Execution Date</th>
+                            <th>Period</th>
+                            <th>Companies</th>
+                            <th>Issues Found</th>
+                            <th>Bad Reviews</th>
+                            <th>Email Status</th>
+                            <th>Status</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var execution in Model)
+                        {
+                            <tr>
+                                <td>
+                                    <strong>@execution.ExecutedAt.ToString("MMM dd, yyyy")</strong><br>
+                                    <small class="text-muted">@execution.ExecutedAt.ToString("HH:mm:ss")</small>
+                                </td>
+                                <td>
+                                    <small>
+                                        @execution.PeriodStart.ToString("MMM dd") - 
+                                        @execution.PeriodEnd.ToString("MMM dd, yyyy")<br>
+                                        <span class="text-muted">(@((execution.PeriodEnd - execution.PeriodStart).Days) days)</span>
+                                    </small>
+                                </td>
+                                <td class="text-center">
+                                    <span class="badge bg-primary">@execution.CompaniesChecked</span>
+                                </td>
+                                <td class="text-center">
+                                    @if (execution.CompaniesWithIssues > 0)
+                                    {
+                                        <span class="badge bg-danger">@execution.CompaniesWithIssues</span>
+                                    }
+                                    else
+                                    {
+                                        <span class="badge bg-success">0</span>
+                                    }
+                                </td>
+                                <td class="text-center">
+                                    @if (execution.TotalBadReviews > 0)
+                                    {
+                                        <span class="badge bg-warning">@execution.TotalBadReviews</span>
+                                    }
+                                    else
+                                    {
+                                        <span class="badge bg-success">0</span>
+                                    }
+                                </td>
+                                <td class="text-center">
+                                    @if (execution.EmailSent)
+                                    {
+                                        <span class="badge bg-success">
+                                            <i class="fas fa-check"></i> Sent
+                                        </span>
+                                    }
+                                    else
+                                    {
+                                        <span class="badge bg-danger" title="@execution.EmailError">
+                                            <i class="fas fa-times"></i> Failed
+                                        </span>
+                                    }
+                                </td>
+                                <td class="text-center">
+                                    @switch (execution.Status)
+                                    {
+                                        case google_reviews.Models.ExecutionStatus.Success:
+                                            <span class="badge bg-success">
+                                                <i class="fas fa-check"></i> Success
+                                            </span>
+                                            break;
+                                        case google_reviews.Models.ExecutionStatus.Failed:
+                                            <span class="badge bg-danger">
+                                                <i class="fas fa-exclamation-triangle"></i> Failed
+                                            </span>
+                                            break;
+                                        case google_reviews.Models.ExecutionStatus.PartialSuccess:
+                                            <span class="badge bg-warning">
+                                                <i class="fas fa-exclamation-circle"></i> Partial
+                                            </span>
+                                            break;
+                                    }
+                                </td>
+                                <td>
+                                    @if (execution.CompaniesWithIssues > 0)
+                                    {
+                                        <button type="button" class="btn btn-sm btn-outline-primary" 
+                                                data-bs-toggle="modal" 
+                                                data-bs-target="#detailsModal"
+                                                onclick="showExecutionDetails('@execution.Id', '@execution.ExecutedAt.ToString("MMM dd, yyyy HH:mm")', @execution.CompaniesWithIssues, @execution.TotalBadReviews)">
+                                            <i class="fas fa-eye"></i> Details
+                                        </button>
+                                    }
+                                    else
+                                    {
+                                        <small class="text-muted">No issues</small>
+                                    }
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Summary Statistics -->
+    <div class="row mt-4">
+        <div class="col-md-3">
+            <div class="card bg-primary text-white">
+                <div class="card-body text-center">
+                    <h3>@Model.Count</h3>
+                    <p class="mb-0">Total Executions</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card bg-success text-white">
+                <div class="card-body text-center">
+                    <h3>@Model.Count(e => e.Status == google_reviews.Models.ExecutionStatus.Success)</h3>
+                    <p class="mb-0">Successful</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card bg-warning text-white">
+                <div class="card-body text-center">
+                    <h3>@Model.Sum(e => e.CompaniesWithIssues)</h3>
+                    <p class="mb-0">Total Issues Found</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card bg-info text-white">
+                <div class="card-body text-center">
+                    <h3>@Model.Sum(e => e.TotalBadReviews)</h3>
+                    <p class="mb-0">Total Bad Reviews</p>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+else
+{
+    <div class="text-center py-5">
+        <i class="fas fa-history fa-3x text-muted mb-3"></i>
+        <h4 class="text-muted">No Execution History</h4>
+        <p class="text-muted">This monitor hasn't been executed yet. It will run automatically based on its schedule.</p>
+        @if (monitor?.IsActive == true)
+        {
+            <p class="text-muted">Next scheduled run: <strong>@monitor.NextRunAt.ToString("MMM dd, yyyy HH:mm")</strong></p>
+        }
+        else
+        {
+            <p class="text-warning">Monitor is currently inactive.</p>
+        }
+    </div>
+}
+
+<!-- Details Modal -->
+<div class="modal fade" id="detailsModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Execution Details</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div id="modalContent">
+                    <div class="text-center">
+                        <div class="spinner-border text-primary" role="status">
+                            <span class="visually-hidden">Loading...</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    function showExecutionDetails(executionId, executionDate, companiesWithIssues, totalBadReviews) {
+        const modalContent = document.getElementById('modalContent');
+        
+        // Update modal title
+        document.querySelector('#detailsModal .modal-title').textContent = `Execution Details - ${executionDate}`;
+        
+        // Simple details display (you could make this more detailed by adding an API endpoint)
+        modalContent.innerHTML = `
+            <div class="alert alert-warning">
+                <h5><i class="fas fa-exclamation-triangle"></i> Issues Found</h5>
+                <p>This execution found <strong>${companiesWithIssues} companies</strong> with review issues.</p>
+                <p>Total bad reviews detected: <strong>${totalBadReviews}</strong></p>
+            </div>
+            <div class="alert alert-info">
+                <h6>What this means:</h6>
+                <ul>
+                    <li>An email report was sent with detailed information about each company</li>
+                    <li>The email contains specific reviews that need attention</li>
+                    <li>Check your email for the full report with actionable insights</li>
+                </ul>
+            </div>
+            <div class="text-center">
+                <small class="text-muted">For detailed review information, check the email report that was sent.</small>
+            </div>
+        `;
+    }
+</script>

@@ -37,6 +37,12 @@
                             <li class="nav-item">
                                 <a class="nav-link text-dark" asp-area="" asp-controller="Drive" asp-action="Index">Drive Documents</a>
                             </li>
+                            @if (User.IsInRole("Admin"))
+                            {
+                                <li class="nav-item">
+                                    <a class="nav-link text-dark" asp-area="" asp-controller="ScheduledMonitor" asp-action="Index">Scheduled Monitors</a>
+                                </li>
+                            }
                         }
                         @if (User.IsInRole("Admin"))
                         {
