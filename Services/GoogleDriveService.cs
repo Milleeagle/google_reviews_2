@@ -43,21 +43,22 @@ namespace google_reviews.Services
                 if (!string.IsNullOrEmpty(serviceAccountKeyPath) && System.IO.File.Exists(serviceAccountKeyPath))
                 {
                     // Load from file
-                    using var stream = new FileStream(serviceAccountKeyPath, FileMode.Open, FileAccess.Read);
-                    credential = GoogleCredential.FromStream(stream)
-                        .CreateScoped(DriveService.Scope.DriveReadonly);
+                    credential = await CreateGoogleCredentialAsync(serviceAccountKeyPath, isFilePath: true, DriveService.Scope.DriveReadonly);
                 }
                 else if (!string.IsNullOrEmpty(serviceAccountKeyJson))
                 {
                     // Load from JSON string (stored in user secrets or appsettings)
-                    var keyBytes = Encoding.UTF8.GetBytes(serviceAccountKeyJson);
-                    using var stream = new MemoryStream(keyBytes);
-                    credential = GoogleCredential.FromStream(stream)
-                        .CreateScoped(DriveService.Scope.DriveReadonly);
+                    credential = await CreateGoogleCredentialAsync(serviceAccountKeyJson, isFilePath: false, DriveService.Scope.DriveReadonly);
                 }
                 else
                 {
                     _logger.LogError("Google Drive service account credentials not configured. Set either GoogleDrive:ServiceAccountKeyPath or GoogleDrive:ServiceAccountKeyJson");
+                    return null;
+                }
+
+                if (credential == null)
+                {
+                    _logger.LogError("Failed to create Google credential");
                     return null;
                 }
 
@@ -292,10 +293,13 @@ namespace google_reviews.Services
                     return null;
                 }
 
-                var keyBytes = Encoding.UTF8.GetBytes(serviceAccountKeyJson);
-                using var stream = new MemoryStream(keyBytes);
-                var credential = GoogleCredential.FromStream(stream)
-                    .CreateScoped(SheetsService.Scope.SpreadsheetsReadonly);
+                var credential = await CreateGoogleCredentialAsync(serviceAccountKeyJson, isFilePath: false, scopes: SheetsService.Scope.SpreadsheetsReadonly);
+                
+                if (credential == null)
+                {
+                    _logger.LogError("Failed to create Google credential for Sheets");
+                    return null;
+                }
 
                 _sheetsService = new SheetsService(new BaseClientService.Initializer()
                 {
@@ -594,6 +598,138 @@ namespace google_reviews.Services
                    placeId.Length >= 20 && 
                    placeId.Length <= 35 &&
                    !placeId.StartsWith("0x"); // Exclude hex values
+        }
+
+        private async Task<GoogleCredential?> CreateGoogleCredentialAsync(string credentialSource, bool isFilePath, string? scopes = null)
+        {
+            var maxRetries = 3;
+            var currentRetry = 0;
+
+            while (currentRetry < maxRetries)
+            {
+                try
+                {
+                    GoogleCredential credential;
+
+                    if (isFilePath)
+                    {
+                        // Load from file
+                        using var stream = new FileStream(credentialSource, FileMode.Open, FileAccess.Read);
+                        credential = GoogleCredential.FromStream(stream);
+                    }
+                    else
+                    {
+                        // Load from JSON string
+                        var keyBytes = Encoding.UTF8.GetBytes(credentialSource);
+                        using var stream = new MemoryStream(keyBytes);
+                        credential = GoogleCredential.FromStream(stream);
+                    }
+
+                    // Create scoped credential
+                    var scopedCredential = credential.CreateScoped(scopes ?? DriveService.Scope.DriveReadonly);
+                    
+                    // Test the credential by trying to get an access token
+                    var tokenRequest = scopedCredential.UnderlyingCredential as Google.Apis.Auth.OAuth2.ServiceAccountCredential;
+                    if (tokenRequest != null)
+                    {
+                        _logger.LogInformation("Successfully created Google service account credential");
+                        var token = await tokenRequest.GetAccessTokenForRequestAsync();
+                        if (!string.IsNullOrEmpty(token))
+                        {
+                            _logger.LogInformation("Successfully obtained access token from Google");
+                            return scopedCredential;
+                        }
+                    }
+
+                    return scopedCredential;
+                }
+                catch (System.Security.Cryptography.CryptographicException cryptoEx)
+                {
+                    _logger.LogWarning($"Cryptographic error attempt {currentRetry + 1}/{maxRetries}: {cryptoEx.Message}");
+                    
+                    if (currentRetry == maxRetries - 1)
+                    {
+                        _logger.LogError(cryptoEx, "Failed to create Google credential after all retry attempts due to cryptographic error");
+                        
+                        // Try alternative authentication method as last resort
+                        return await TryAlternativeAuthenticationAsync(credentialSource, isFilePath, scopes);
+                    }
+                    
+                    // Wait before retry
+                    await Task.Delay(1000 * (currentRetry + 1));
+                    currentRetry++;
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, $"Error creating Google credential: {ex.Message}");
+                    return null;
+                }
+            }
+
+            return null;
+        }
+
+        private async Task<GoogleCredential?> TryAlternativeAuthenticationAsync(string credentialSource, bool isFilePath, string scopes)
+        {
+            try
+            {
+                _logger.LogInformation("Attempting alternative authentication method using environment variable approach");
+                
+                string tempKeyFilePath = null;
+                
+                try
+                {
+                    if (!isFilePath)
+                    {
+                        // Create a temporary file for the service account key
+                        tempKeyFilePath = Path.GetTempFileName();
+                        await System.IO.File.WriteAllTextAsync(tempKeyFilePath, credentialSource);
+                    }
+                    else
+                    {
+                        tempKeyFilePath = credentialSource;
+                    }
+
+                    // Set the environment variable that Google libraries look for
+                    var originalEnvVar = Environment.GetEnvironmentVariable("GOOGLE_APPLICATION_CREDENTIALS");
+                    Environment.SetEnvironmentVariable("GOOGLE_APPLICATION_CREDENTIALS", tempKeyFilePath);
+
+                    try
+                    {
+                        // Try using default credentials which should pick up the environment variable
+                        var credential = GoogleCredential.GetApplicationDefault()
+                            .CreateScoped(scopes ?? DriveService.Scope.DriveReadonly);
+
+                        _logger.LogInformation("Successfully created Google credential using alternative method");
+                        return credential;
+                    }
+                    finally
+                    {
+                        // Restore original environment variable
+                        Environment.SetEnvironmentVariable("GOOGLE_APPLICATION_CREDENTIALS", originalEnvVar);
+                    }
+                }
+                finally
+                {
+                    // Clean up temp file if we created one
+                    if (!isFilePath && tempKeyFilePath != null && System.IO.File.Exists(tempKeyFilePath))
+                    {
+                        try
+                        {
+                            System.IO.File.Delete(tempKeyFilePath);
+                        }
+                        catch (Exception deleteEx)
+                        {
+                            _logger.LogWarning(deleteEx, "Failed to delete temporary credentials file");
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Alternative authentication method also failed");
+                return null;
+            }
         }
 
         public void Dispose()
