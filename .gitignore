@@ -365,3 +365,4 @@ FodyWeavers.xsd
 # Custom - credentials and secrets (never commit)
 credentials.json
 *.credentials.json
+appsettings.Local.json
