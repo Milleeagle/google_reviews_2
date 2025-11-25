@@ -9,5 +9,7 @@ namespace google_reviews.Services
         Task<bool> SendBatchReviewNotificationAsync(string recipientEmail, List<CompanyReviewData> reviewData, List<string> results, int successCount, int failCount);
         Task<bool> SendTestEmailAsync(string recipientEmail);
         Task<bool> IsConfiguredAsync();
+        Task<bool> SendCustomerOutreachEmailAsync(CustomerEmailData customerData, string senderName, string senderPhone, string senderWebsite);
+        Task<BatchEmailResult> SendBatchCustomerOutreachEmailsAsync(List<CustomerEmailData> customers, string senderName, string senderPhone, string senderWebsite, bool isTestMode = false, string? testEmail = null);
     }
 }

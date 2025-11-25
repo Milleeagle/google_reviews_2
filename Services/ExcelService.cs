@@ -180,5 +180,105 @@ namespace google_reviews.Services
 
             return companies;
         }
+
+        public List<CustomerEmailData> ParseCustomerEmailDataFromExcel(Stream fileStream)
+        {
+            var customers = new List<CustomerEmailData>();
+
+            try
+            {
+                using (var workbook = new XLWorkbook(fileStream))
+                {
+                    var worksheet = workbook.Worksheet(1);
+                    var rows = worksheet.RowsUsed().Skip(1); // Skip header row
+
+                    foreach (var row in rows)
+                    {
+                        try
+                        {
+                            var companyName = row.Cell(1).GetString().Trim();
+                            var email = row.Cell(2).GetString().Trim();
+                            var googleMapsUrl = row.Cell(3).GetString().Trim();
+
+                            // Skip if missing critical data
+                            if (string.IsNullOrWhiteSpace(companyName) || string.IsNullOrWhiteSpace(email))
+                            {
+                                _logger.LogWarning($"Skipping row {row.RowNumber()} - missing company name or email");
+                                continue;
+                            }
+
+                            // Validate email format
+                            if (!IsValidEmail(email))
+                            {
+                                _logger.LogWarning($"Skipping row {row.RowNumber()} - invalid email format: {email}");
+                                continue;
+                            }
+
+                            // Try to extract additional data if available
+                            var badReviewCount = 0;
+                            var avgRating = 0.0;
+
+                            // Check if there are more columns with review data
+                            if (row.CellsUsed().Count() >= 4)
+                            {
+                                try
+                                {
+                                    badReviewCount = int.Parse(row.Cell(4).GetString());
+                                }
+                                catch { }
+                            }
+
+                            if (row.CellsUsed().Count() >= 5)
+                            {
+                                try
+                                {
+                                    avgRating = double.Parse(row.Cell(5).GetString());
+                                }
+                                catch { }
+                            }
+
+                            customers.Add(new CustomerEmailData
+                            {
+                                CompanyName = companyName,
+                                Email = email,
+                                GoogleMapsUrl = googleMapsUrl,
+                                BadReviewCount = badReviewCount > 0 ? badReviewCount : 1, // Default to 1 if not specified
+                                AverageRating = avgRating
+                            });
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.LogWarning(ex, $"Error parsing row {row.RowNumber()}, skipping");
+                            continue;
+                        }
+                    }
+                }
+
+                _logger.LogInformation($"Successfully parsed {customers.Count} customer records from Excel");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error parsing customer email data from Excel");
+                throw new InvalidOperationException("Failed to parse Excel file. Please ensure the file has columns: Company Name, Email, Google Maps URL, Bad Review Count (optional), Avg Rating (optional)", ex);
+            }
+
+            return customers;
+        }
+
+        private bool IsValidEmail(string email)
+        {
+            if (string.IsNullOrWhiteSpace(email))
+                return false;
+
+            try
+            {
+                var addr = new System.Net.Mail.MailAddress(email);
+                return addr.Address == email;
+            }
+            catch
+            {
+                return false;
+            }
+        }
     }
 }

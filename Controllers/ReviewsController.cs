@@ -2239,6 +2239,252 @@ namespace google_reviews.Controllers
 
             return now;
         }
+
+        // GET: Reviews/EmailCustomers
+        [Authorize(Roles = "Admin")]
+        public IActionResult EmailCustomers()
+        {
+            return View();
+        }
+
+        // POST: Reviews/UploadCustomerList
+        [HttpPost]
+        [ValidateAntiForgeryToken]
+        [Authorize(Roles = "Admin")]
+        public async Task<IActionResult> UploadCustomerList(IFormFile excelFile)
+        {
+            if (excelFile == null || excelFile.Length == 0)
+            {
+                return Json(new { success = false, error = "Please select an Excel file to upload." });
+            }
+
+            var extension = Path.GetExtension(excelFile.FileName).ToLower();
+            if (extension != ".xlsx" && extension != ".xls")
+            {
+                return Json(new { success = false, error = "Please upload a valid Excel file (.xlsx or .xls)" });
+            }
+
+            try
+            {
+                List<CustomerEmailData> customers;
+                using (var stream = excelFile.OpenReadStream())
+                {
+                    customers = _excelService.ParseCustomerEmailDataFromExcel(stream);
+                }
+
+                if (!customers.Any())
+                {
+                    return Json(new { success = false, error = "No valid customer data found in the Excel file." });
+                }
+
+                // Store customers in TempData for the next request
+                TempData["CustomerEmailData"] = System.Text.Json.JsonSerializer.Serialize(customers);
+
+                return Json(new {
+                    success = true,
+                    customerCount = customers.Count,
+                    customers = customers.Select(c => new {
+                        companyName = c.CompanyName,
+                        email = c.Email,
+                        badReviewCount = c.BadReviewCount
+                    }).ToList()
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error uploading customer list");
+                return Json(new { success = false, error = $"Error parsing file: {ex.Message}" });
+            }
+        }
+
+        // POST: Reviews/SendBatchCustomerEmails
+        [HttpPost]
+        [ValidateAntiForgeryToken]
+        [Authorize(Roles = "Admin")]
+        public async Task<IActionResult> SendBatchCustomerEmails(
+            string senderName,
+            string senderPhone,
+            string senderWebsite,
+            bool isTestMode = false,
+            string? testEmail = null)
+        {
+            try
+            {
+                // Retrieve customer data from TempData
+                var customerDataJson = TempData["CustomerEmailData"] as string;
+                if (string.IsNullOrEmpty(customerDataJson))
+                {
+                    return Json(new { success = false, error = "Customer data not found. Please upload the Excel file again." });
+                }
+
+                var customers = System.Text.Json.JsonSerializer.Deserialize<List<CustomerEmailData>>(customerDataJson);
+                if (customers == null || !customers.Any())
+                {
+                    return Json(new { success = false, error = "No customer data to process." });
+                }
+
+                // Validate required fields
+                if (string.IsNullOrWhiteSpace(senderName) || string.IsNullOrWhiteSpace(senderPhone) || string.IsNullOrWhiteSpace(senderWebsite))
+                {
+                    return Json(new { success = false, error = "Please provide sender name, phone, and website." });
+                }
+
+                if (isTestMode && string.IsNullOrWhiteSpace(testEmail))
+                {
+                    return Json(new { success = false, error = "Please provide a test email address for test mode." });
+                }
+
+                // Create session for progress tracking
+                var sessionId = _progressService.CreateSession();
+
+                // Start background email sending
+                _ = Task.Run(() => SendBatchCustomerEmailsBackground(customers, senderName, senderPhone, senderWebsite, isTestMode, testEmail, sessionId));
+
+                return Json(new { success = true, sessionId = sessionId, totalCustomers = customers.Count, isTestMode = isTestMode });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error starting batch customer email send");
+                return Json(new { success = false, error = "Failed to start email sending process." });
+            }
+        }
+
+        // Background method for sending batch customer emails
+        private async Task SendBatchCustomerEmailsBackground(
+            List<CustomerEmailData> customers,
+            string senderName,
+            string senderPhone,
+            string senderWebsite,
+            bool isTestMode,
+            string? testEmail,
+            string sessionId)
+        {
+            using var scope = _serviceScopeFactory.CreateScope();
+            var emailService = scope.ServiceProvider.GetRequiredService<IEmailService>();
+            var logger = scope.ServiceProvider.GetRequiredService<ILogger<ReviewsController>>();
+
+            try
+            {
+                var startTime = DateTime.UtcNow;
+                int successCount = 0;
+                int failCount = 0;
+
+                logger.LogInformation($"Starting batch customer email send: {customers.Count} customers, Test Mode: {isTestMode}, Session: {sessionId}");
+
+                _progressService.UpdateProgress(sessionId, new BatchProgressInfo
+                {
+                    TotalItems = customers.Count,
+                    ProcessedItems = 0,
+                    SuccessfulItems = 0,
+                    FailedItems = 0,
+                    CurrentItem = "Starting email campaign...",
+                    Status = "Initializing",
+                    EstimatedRemainingSeconds = 0,
+                    IsComplete = false,
+                    StartTime = startTime,
+                    RequestsPerMinute = 0,
+                    RateLimitInfo = isTestMode ? $"TEST MODE - All emails will be sent to {testEmail}" : "Sending to real customer emails"
+                });
+
+                for (int i = 0; i < customers.Count; i++)
+                {
+                    var customer = customers[i];
+                    var currentTime = DateTime.UtcNow;
+                    var elapsed = currentTime - startTime;
+                    var avgTimePerItem = i > 0 ? elapsed.TotalSeconds / i : 0;
+                    var remainingItems = customers.Count - i;
+                    var estimatedRemaining = avgTimePerItem > 0 ? (int)(remainingItems * avgTimePerItem) : 0;
+
+                    _progressService.UpdateProgress(sessionId, new BatchProgressInfo
+                    {
+                        TotalItems = customers.Count,
+                        ProcessedItems = i,
+                        SuccessfulItems = successCount,
+                        FailedItems = failCount,
+                        CurrentItem = $"Sending to: {customer.CompanyName}",
+                        Status = "Sending",
+                        EstimatedRemainingSeconds = estimatedRemaining,
+                        IsComplete = false,
+                        StartTime = startTime,
+                        RequestsPerMinute = i > 0 ? (i / elapsed.TotalMinutes) : 0,
+                        RateLimitInfo = isTestMode ? $"TEST MODE - Sending to {testEmail}" : $"Sending to {customer.Email}"
+                    });
+
+                    try
+                    {
+                        var emailToSend = isTestMode && !string.IsNullOrEmpty(testEmail)
+                            ? new CustomerEmailData
+                            {
+                                CompanyName = customer.CompanyName,
+                                Email = testEmail,
+                                GoogleMapsUrl = customer.GoogleMapsUrl,
+                                BadReviewCount = customer.BadReviewCount,
+                                AverageRating = customer.AverageRating,
+                                BadReviews = customer.BadReviews
+                            }
+                            : customer;
+
+                        var sent = await emailService.SendCustomerOutreachEmailAsync(emailToSend, senderName, senderPhone, senderWebsite);
+
+                        if (sent)
+                        {
+                            successCount++;
+                            logger.LogInformation($"✓ Email sent to {customer.CompanyName} ({customer.Email})");
+                        }
+                        else
+                        {
+                            failCount++;
+                            logger.LogWarning($"✗ Failed to send email to {customer.CompanyName} ({customer.Email})");
+                        }
+
+                        // Small delay between emails
+                        await Task.Delay(1000);
+                    }
+                    catch (Exception ex)
+                    {
+                        failCount++;
+                        logger.LogError(ex, $"Error sending email to {customer.CompanyName} ({customer.Email})");
+                    }
+                }
+
+                // Final progress update
+                var finalElapsed = DateTime.UtcNow - startTime;
+                _progressService.UpdateProgress(sessionId, new BatchProgressInfo
+                {
+                    TotalItems = customers.Count,
+                    ProcessedItems = customers.Count,
+                    SuccessfulItems = successCount,
+                    FailedItems = failCount,
+                    CurrentItem = "Email campaign completed!",
+                    Status = "Complete",
+                    EstimatedRemainingSeconds = 0,
+                    IsComplete = true,
+                    StartTime = startTime,
+                    RequestsPerMinute = customers.Count / finalElapsed.TotalMinutes,
+                    RateLimitInfo = $"Completed in {finalElapsed.TotalMinutes:F1} minutes. Success: {successCount}, Failed: {failCount}"
+                });
+
+                logger.LogInformation($"Batch customer email send completed: {successCount} sent, {failCount} failed");
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, $"Error in batch customer email send session {sessionId}");
+                _progressService.UpdateProgress(sessionId, new BatchProgressInfo
+                {
+                    TotalItems = customers.Count,
+                    ProcessedItems = 0,
+                    SuccessfulItems = 0,
+                    FailedItems = 0,
+                    CurrentItem = "Error occurred during email campaign",
+                    Status = "Error",
+                    EstimatedRemainingSeconds = 0,
+                    IsComplete = true,
+                    StartTime = DateTime.UtcNow,
+                    RequestsPerMinute = 0,
+                    RateLimitInfo = $"Error: {ex.Message}"
+                });
+            }
+        }
     }
 
     public class DuplicateGroup

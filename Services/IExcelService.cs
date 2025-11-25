@@ -6,5 +6,6 @@ namespace google_reviews.Services
     {
         byte[] GenerateReviewReportExcel(ReviewMonitorReport report);
         List<Company> ImportCompaniesFromExcel(Stream fileStream);
+        List<CustomerEmailData> ParseCustomerEmailDataFromExcel(Stream fileStream);
     }
 }

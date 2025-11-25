@@ -578,5 +578,308 @@ namespace google_reviews.Services
                 return false;
             }
         }
+
+        public async Task<bool> SendCustomerOutreachEmailAsync(CustomerEmailData customerData, string senderName, string senderPhone, string senderWebsite)
+        {
+            try
+            {
+                var emailConfig = _configuration.GetSection("Email");
+                var smtpHost = emailConfig["SmtpHost"];
+                var smtpPort = int.Parse(emailConfig["SmtpPort"] ?? "587");
+                var smtpUsername = emailConfig["SmtpUsername"];
+                var smtpPassword = emailConfig["SmtpPassword"];
+                var fromEmail = emailConfig["FromEmail"] ?? smtpUsername;
+                var fromName = emailConfig["FromName"] ?? "Deletify";
+
+                if (string.IsNullOrEmpty(smtpHost) || string.IsNullOrEmpty(smtpUsername) || string.IsNullOrEmpty(smtpPassword))
+                {
+                    _logger.LogError("Email configuration is missing required settings");
+                    return false;
+                }
+
+                var subject = $"Gratis granskning av er Google-profil - {customerData.CompanyName}";
+                var htmlBody = GenerateCustomerOutreachEmailHtml(customerData, senderName, senderPhone, senderWebsite);
+
+                using var client = new SmtpClient(smtpHost, smtpPort);
+                client.EnableSsl = true;
+                client.UseDefaultCredentials = false;
+                client.Credentials = new NetworkCredential(smtpUsername, smtpPassword);
+
+                var message = new MailMessage();
+                message.From = new MailAddress(fromEmail, fromName);
+                message.To.Add(customerData.Email);
+                message.Subject = subject;
+                message.Body = htmlBody;
+                message.IsBodyHtml = true;
+                message.BodyEncoding = Encoding.UTF8;
+
+                await client.SendMailAsync(message);
+
+                _logger.LogInformation($"Customer outreach email sent successfully to {customerData.Email} ({customerData.CompanyName})");
+                return true;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, $"Failed to send customer outreach email to {customerData.Email} ({customerData.CompanyName})");
+                return false;
+            }
+        }
+
+        public async Task<BatchEmailResult> SendBatchCustomerOutreachEmailsAsync(List<CustomerEmailData> customers, string senderName, string senderPhone, string senderWebsite, bool isTestMode = false, string? testEmail = null)
+        {
+            var result = new BatchEmailResult
+            {
+                TotalEmails = customers.Count,
+                IsTestMode = isTestMode,
+                TestEmail = testEmail
+            };
+
+            foreach (var customer in customers)
+            {
+                try
+                {
+                    // In test mode, send all emails to the test email address
+                    var emailToSend = isTestMode && !string.IsNullOrEmpty(testEmail)
+                        ? new CustomerEmailData
+                        {
+                            CompanyName = customer.CompanyName,
+                            Email = testEmail,
+                            GoogleMapsUrl = customer.GoogleMapsUrl,
+                            BadReviewCount = customer.BadReviewCount,
+                            AverageRating = customer.AverageRating,
+                            BadReviews = customer.BadReviews
+                        }
+                        : customer;
+
+                    var sent = await SendCustomerOutreachEmailAsync(emailToSend, senderName, senderPhone, senderWebsite);
+
+                    if (sent)
+                    {
+                        result.SuccessCount++;
+                        result.SuccessfulEmails.Add($"{customer.CompanyName} ({customer.Email})");
+                    }
+                    else
+                    {
+                        result.FailCount++;
+                        result.FailedEmails.Add($"{customer.CompanyName} ({customer.Email})");
+                    }
+
+                    // Small delay between emails to avoid rate limiting
+                    await Task.Delay(1000);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, $"Error sending email to {customer.CompanyName} ({customer.Email})");
+                    result.FailCount++;
+                    result.FailedEmails.Add($"{customer.CompanyName} ({customer.Email}) - Error: {ex.Message}");
+                }
+            }
+
+            return result;
+        }
+
+        private string GenerateCustomerOutreachEmailHtml(CustomerEmailData customerData, string senderName, string senderPhone, string senderWebsite)
+        {
+            var sb = new StringBuilder();
+
+            sb.Append(@"
+<!DOCTYPE html>
+<html lang='sv'>
+<head>
+    <meta charset='UTF-8'>
+    <meta name='viewport' content='width=device-width, initial-scale=1.0'>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.8;
+            color: #333;
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f9f9f9;
+        }
+        .email-container {
+            background-color: #ffffff;
+            border-radius: 12px;
+            padding: 40px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+            padding-bottom: 20px;
+            border-bottom: 3px solid #e74c3c;
+        }
+        .company-name {
+            color: #e74c3c;
+            font-weight: bold;
+            font-size: 1.1em;
+        }
+        .greeting {
+            font-size: 16px;
+            margin-bottom: 25px;
+            color: #2c3e50;
+        }
+        .highlight-box {
+            background-color: #fff3cd;
+            border-left: 4px solid #ffc107;
+            padding: 20px;
+            margin: 25px 0;
+            border-radius: 6px;
+        }
+        .bullet-list {
+            margin: 20px 0;
+            padding-left: 0;
+        }
+        .bullet-list li {
+            list-style: none;
+            padding: 12px 0;
+            padding-left: 30px;
+            position: relative;
+            font-size: 15px;
+            line-height: 1.6;
+        }
+        .bullet-list li:before {
+            content: '✓';
+            position: absolute;
+            left: 0;
+            color: #27ae60;
+            font-weight: bold;
+            font-size: 18px;
+        }
+        .cta {
+            text-align: center;
+            margin: 35px 0;
+            padding: 30px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 10px;
+            color: white;
+        }
+        .cta-text {
+            font-size: 18px;
+            font-weight: 600;
+            margin-bottom: 15px;
+        }
+        .cta-button {
+            display: inline-block;
+            padding: 15px 35px;
+            background-color: #ffffff;
+            color: #667eea;
+            text-decoration: none;
+            border-radius: 50px;
+            font-weight: bold;
+            font-size: 16px;
+            margin-top: 15px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+            transition: all 0.3s ease;
+        }
+        .signature {
+            margin-top: 40px;
+            padding-top: 25px;
+            border-top: 2px solid #ecf0f1;
+            font-size: 15px;
+        }
+        .sender-name {
+            font-weight: bold;
+            color: #2c3e50;
+            font-size: 17px;
+            margin-bottom: 5px;
+        }
+        .company-tag {
+            color: #e74c3c;
+            font-weight: 600;
+            font-size: 16px;
+        }
+        .contact-info {
+            color: #7f8c8d;
+            margin-top: 10px;
+            font-size: 14px;
+        }
+        .contact-info a {
+            color: #3498db;
+            text-decoration: none;
+        }
+        .ps-section {
+            margin-top: 25px;
+            padding: 20px;
+            background-color: #f8f9fa;
+            border-radius: 8px;
+            font-style: italic;
+            color: #555;
+        }
+        .review-link {
+            color: #e74c3c;
+            text-decoration: none;
+            font-weight: 600;
+        }
+        .review-link:hover {
+            text-decoration: underline;
+        }
+        @media only screen and (max-width: 600px) {
+            .email-container {
+                padding: 25px;
+            }
+            body {
+                padding: 10px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class='email-container'>
+        <div class='header'>
+            <div style='font-size: 24px; font-weight: bold; color: #e74c3c; margin-bottom: 5px;'>Deletify</div>
+            <div style='color: #7f8c8d; font-size: 14px;'>Experter på Google-recensioner</div>
+        </div>
+
+        <div class='greeting'>
+            <p>Hej <span class='company-name'>").Append(customerData.CompanyName).Append(@"</span>,</p>
+            <p>Jag heter ").Append(senderName).Append(@" och äger ett företag som heter <strong>Deletify</strong>. Vi hjälper företag att ta bort felaktiga eller missvisande Google-recensioner.</p>
+        </div>
+
+        <div class='highlight-box'>
+            <p style='margin: 0; font-weight: 600;'>Vi har noterat ");
+
+            if (customerData.BadReviewCount == 1)
+            {
+                sb.Append("en 1-stjärnig recension");
+            }
+            else
+            {
+                sb.Append($"{customerData.BadReviewCount} lågt betygsatta recensioner");
+            }
+
+            sb.Append(@" på er <a href='").Append(customerData.GoogleMapsUrl).Append(@"' class='review-link' target='_blank'>Google-profil</a> som påverkar er rating och försäljning negativt.</p>
+        </div>
+
+        <p style='font-weight: 600; font-size: 16px; color: #2c3e50; margin-top: 30px;'>Kortfattat:</p>
+        <ul class='bullet-list'>
+            <li>Jag gör en <strong>gratis snabbgranskning</strong></li>
+            <li>Jag agerar för att få bort recensionen</li>
+            <li>Ni betalar endast om jag lyckas — <strong>inga andra avgifter eller förbindelser</strong></li>
+        </ul>
+
+        <div class='cta'>
+            <div class='cta-text'>Vill du ha en gratis granskning?</div>
+            <p style='margin: 10px 0; font-size: 15px;'>Svara på detta mejl så skickar jag den direkt!</p>
+        </div>
+
+        <div class='signature'>
+            <div class='sender-name'>").Append(senderName).Append(@"</div>
+            <div class='company-tag'>Deletify</div>
+            <div class='contact-info'>
+                📞 ").Append(senderPhone).Append(@" · 🌐 <a href='").Append(senderWebsite).Append(@"' target='_blank'>").Append(senderWebsite).Append(@"</a>
+            </div>
+        </div>
+
+        <div class='ps-section'>
+            <strong>PS.</strong> Om du föredrar ett 2-minuters samtal så bokar jag gärna in det. Svara bara på detta mejl med din tillgänglighet!
+        </div>
+    </div>
+</body>
+</html>");
+
+            return sb.ToString();
+        }
     }
 }

@@ -49,6 +49,13 @@ Access at: https://localhost:7019
 - **Review Monitoring**: Automated reports with email alerts
 - **Customer Segmentation**: Current vs Potential customers
 - **Duplicate Cleanup**: Find and merge duplicate entries
+- **📧 Batch Customer Emails**:
+  - Upload Excel with customer data
+  - Send personalized outreach emails
+  - Beautiful HTML email templates in Swedish
+  - Test mode for safe testing before going live
+  - Real-time progress tracking
+  - Automatic email validation
 
 ## Tech Stack
 
