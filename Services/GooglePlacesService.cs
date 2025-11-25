@@ -1,5 +1,6 @@
 using google_reviews.Models;
 using System.Text.Json;
+using System.Threading;
 
 namespace google_reviews.Services
 {
@@ -9,6 +10,13 @@ namespace google_reviews.Services
         private readonly IConfiguration _configuration;
         private readonly ILogger<GooglePlacesService> _logger;
         private readonly string? _apiKey;
+
+        // Rate limiting: Updated to 5000 requests per minute as per user configuration
+        private static readonly SemaphoreSlim _rateLimitSemaphore = new SemaphoreSlim(50, 50); // Allow concurrent requests
+        private static readonly Queue<DateTime> _requestTimes = new Queue<DateTime>();
+        private static readonly object _requestTimesLock = new object();
+        private static readonly TimeSpan _rateLimitWindow = TimeSpan.FromMinutes(1);
+        private static readonly int _maxRequestsPerMinute = 5000;
 
         public GooglePlacesService(
             HttpClient httpClient,
@@ -21,7 +29,98 @@ namespace google_reviews.Services
             _apiKey = _configuration["GooglePlaces:ApiKey"];
         }
 
+        private async Task<HttpResponseMessage> MakeRateLimitedRequestAsync(Func<Task<HttpResponseMessage>> request, int maxRetries = 3)
+        {
+            await _rateLimitSemaphore.WaitAsync();
+            try
+            {
+                // Sliding window rate limiting for 5000 requests per minute
+                DateTime now = DateTime.UtcNow;
+                TimeSpan waitTime = TimeSpan.Zero;
+
+                lock (_requestTimesLock)
+                {
+                    // Remove requests older than 1 minute
+                    while (_requestTimes.Count > 0 && (now - _requestTimes.Peek()) > _rateLimitWindow)
+                    {
+                        _requestTimes.Dequeue();
+                    }
+
+                    // Check if we're at the rate limit
+                    if (_requestTimes.Count >= _maxRequestsPerMinute)
+                    {
+                        var oldestRequest = _requestTimes.Peek();
+                        waitTime = _rateLimitWindow - (now - oldestRequest);
+                    }
+                }
+
+                // Wait outside the lock if needed
+                if (waitTime > TimeSpan.Zero)
+                {
+                    _logger.LogInformation($"Rate limiting: Waiting {waitTime.TotalMilliseconds}ms (5000 requests/minute limit)");
+                    await Task.Delay(waitTime);
+
+                    // Clean up after waiting
+                    lock (_requestTimesLock)
+                    {
+                        now = DateTime.UtcNow;
+                        while (_requestTimes.Count > 0 && (now - _requestTimes.Peek()) > _rateLimitWindow)
+                        {
+                            _requestTimes.Dequeue();
+                        }
+                    }
+                }
+
+                int attempt = 0;
+                while (attempt <= maxRetries)
+                {
+                    try
+                    {
+                        // Record this request time
+                        lock (_requestTimesLock)
+                        {
+                            _requestTimes.Enqueue(DateTime.UtcNow);
+                        }
+
+                        var response = await request();
+
+                        if (response.StatusCode == System.Net.HttpStatusCode.TooManyRequests)
+                        {
+                            attempt++;
+                            if (attempt <= maxRetries)
+                            {
+                                var retryDelay = TimeSpan.FromSeconds(Math.Pow(2, attempt)); // Exponential backoff
+                                _logger.LogWarning($"Rate limit exceeded (429). Retry attempt {attempt}/{maxRetries} in {retryDelay.TotalSeconds} seconds");
+                                await Task.Delay(retryDelay);
+                                continue;
+                            }
+                        }
+
+                        return response;
+                    }
+                    catch (Exception ex) when (attempt < maxRetries)
+                    {
+                        attempt++;
+                        var retryDelay = TimeSpan.FromSeconds(Math.Pow(2, attempt));
+                        _logger.LogWarning(ex, $"Request failed. Retry attempt {attempt}/{maxRetries} in {retryDelay.TotalSeconds} seconds");
+                        await Task.Delay(retryDelay);
+                    }
+                }
+
+                throw new InvalidOperationException($"Request failed after {maxRetries} retries");
+            }
+            finally
+            {
+                _rateLimitSemaphore.Release();
+            }
+        }
+
         public async Task<CompanyReviewData?> GetReviewsAsync(Company company)
+        {
+            return await GetReviewsAsync(company, true); // Default to throttling enabled
+        }
+
+        public async Task<CompanyReviewData?> GetReviewsAsync(Company company, bool enableThrottling)
         {
             if (string.IsNullOrEmpty(_apiKey))
             {
@@ -40,9 +139,17 @@ namespace google_reviews.Services
                 // Using the new Places API (New) endpoint
                 var url = $"https://places.googleapis.com/v1/places/{company.PlaceId}?fields=reviews,rating,userRatingCount&key={_apiKey}";
 
-                _logger.LogInformation($"Fetching reviews for {company.Name} (Place ID: {company.PlaceId}) using New Places API");
+                _logger.LogInformation($"Fetching reviews for {company.Name} (Place ID: {company.PlaceId}) using New Places API (Throttling: {enableThrottling})");
 
-                var response = await _httpClient.GetAsync(url);
+                HttpResponseMessage response;
+                if (enableThrottling)
+                {
+                    response = await MakeRateLimitedRequestAsync(() => _httpClient.GetAsync(url));
+                }
+                else
+                {
+                    response = await _httpClient.GetAsync(url);
+                }
                 
                 var jsonContent = await response.Content.ReadAsStringAsync();
                 _logger.LogInformation($"API Response: {jsonContent}");
@@ -99,8 +206,8 @@ namespace google_reviews.Services
                 var url = $"https://places.googleapis.com/v1/places/{testPlaceId}?fields=displayName&key={_apiKey}";
                 
                 _logger.LogInformation($"Testing Google Places API (New) with URL: {url.Replace(_apiKey, "***API_KEY***")}");
-                
-                var response = await _httpClient.GetAsync(url);
+
+                var response = await MakeRateLimitedRequestAsync(() => _httpClient.GetAsync(url));
                 var content = await response.Content.ReadAsStringAsync();
                 
                 _logger.LogInformation($"API Response Status: {response.StatusCode}");
@@ -178,6 +285,92 @@ namespace google_reviews.Services
             }
 
             return reviews.OrderByDescending(r => r.Time).ToList();
+        }
+
+        public async Task<string?> SearchPlaceByNameAsync(string businessName, string? address = null)
+        {
+            if (string.IsNullOrEmpty(_apiKey))
+            {
+                _logger.LogError("Google Places API key not configured");
+                return null;
+            }
+
+            if (string.IsNullOrEmpty(businessName))
+            {
+                _logger.LogWarning("Business name is required for search");
+                return null;
+            }
+
+            try
+            {
+                // Create search query
+                var searchQuery = businessName;
+                if (!string.IsNullOrEmpty(address))
+                {
+                    searchQuery += $", {address}";
+                }
+
+                // Using the Google Places API (New) Text Search endpoint
+                var url = "https://places.googleapis.com/v1/places:searchText";
+
+                var requestBody = new
+                {
+                    textQuery = searchQuery,
+                    maxResultCount = 5 // Limit results to avoid unnecessary data
+                };
+
+                var json = JsonSerializer.Serialize(requestBody, new JsonSerializerOptions
+                {
+                    PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+                });
+
+                var content = new StringContent(json, System.Text.Encoding.UTF8, "application/json");
+
+                _logger.LogInformation($"Searching for place: '{searchQuery}' using Google Places Search API");
+
+                var response = await MakeRateLimitedRequestAsync(() => {
+                    var request = new HttpRequestMessage(HttpMethod.Post, url)
+                    {
+                        Content = content
+                    };
+                    // Add required headers for the new API without affecting the shared HttpClient
+                    request.Headers.Add("X-Goog-Api-Key", _apiKey);
+                    request.Headers.Add("X-Goog-FieldMask", "places.id,places.displayName,places.formattedAddress");
+
+                    return _httpClient.SendAsync(request);
+                });
+                var jsonResponse = await response.Content.ReadAsStringAsync();
+
+                _logger.LogInformation($"Search API Response Status: {response.StatusCode}");
+                _logger.LogInformation($"Search API Response: {jsonResponse}");
+
+                if (!response.IsSuccessStatusCode)
+                {
+                    _logger.LogError($"Search API request failed with status {response.StatusCode}: {jsonResponse}");
+                    return null;
+                }
+
+                var searchResponse = JsonSerializer.Deserialize<GooglePlacesSearchResponse>(jsonResponse, new JsonSerializerOptions
+                {
+                    PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+                });
+
+                if (searchResponse?.Places?.Any() == true)
+                {
+                    var firstPlace = searchResponse.Places.First();
+                    var displayName = firstPlace.DisplayName?.Text ?? "Unknown";
+                    _logger.LogInformation($"Found Place ID: {firstPlace.Id} for '{businessName}' - {displayName} at {firstPlace.FormattedAddress}");
+                    return firstPlace.Id;
+                }
+
+                _logger.LogWarning($"No places found for search query: '{searchQuery}'");
+                return null;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, $"Error searching for place: '{businessName}'");
+                return null;
+            }
         }
 
         public async Task<CompanyReviewData?> GetFilteredReviewsAsync(Company company, DateTime? fromDate = null, DateTime? toDate = null, int? minRating = null, int? maxRating = null)

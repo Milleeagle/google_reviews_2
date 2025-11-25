@@ -451,6 +451,7 @@ namespace google_reviews.Services
         {
             var company = new SheetCompany { RowNumber = rowNumber };
             _logger.LogDebug($"Parsing row {rowNumber} with {row.Count} values and {headers.Count} headers");
+            _logger.LogInformation($"Row {rowNumber}: Headers found: [{string.Join(", ", headers.Select((h, i) => $"{i}: '{h}'"))}]");
 
             for (int i = 0; i < Math.Min(row.Count, headers.Count); i++)
             {
@@ -494,6 +495,14 @@ namespace google_reviews.Services
                     case "site":
                         company.Website = value;
                         break;
+                    case "email":
+                    case "email address":
+                    case "e-mail":
+                    case "mail":
+                    case "contact email":
+                        company.EmailAddress = value;
+                        _logger.LogDebug($"Row {rowNumber}: Found email '{value}' in column '{headers[i]}'");
+                        break;
                     case "category":
                     case "type":
                     case "business type":
@@ -519,7 +528,8 @@ namespace google_reviews.Services
                 }
             }
 
-            _logger.LogDebug($"Row {rowNumber} parsed: Name='{company.Name}', PlaceId='{company.PlaceId}', HasAdditionalData={company.AdditionalData.Count}");
+            _logger.LogDebug($"Row {rowNumber} parsed: Name='{company.Name}', PlaceId='{company.PlaceId}', EmailAddress='{company.EmailAddress}', HasAdditionalData={company.AdditionalData.Count}");
+            _logger.LogInformation($"Row {rowNumber}: Parsed company '{company.Name}' with email '{company.EmailAddress ?? "NULL"}'");
             return company;
         }
 
@@ -530,51 +540,72 @@ namespace google_reviews.Services
 
             try
             {
-                // Valid Google Place IDs start with ChIJ and are base64-like strings
-                // Let's be more specific about what we extract
-                
-                // 1. Look for typical ChIJ Place ID pattern first (most reliable)
-                var match = Regex.Match(url, @"(ChIJ[a-zA-Z0-9\-_]{16,})");
+                // Modern comprehensive Google Maps URL Place ID extraction
+                // Handles various URL formats from 2020-2024+
+
+                // 1. Direct place_id parameter (most reliable when present)
+                var match = Regex.Match(url, @"place_id=([a-zA-Z0-9\-_]{20,})");
                 if (match.Success && IsValidPlaceId(match.Groups[1].Value))
                 {
                     return match.Groups[1].Value;
                 }
 
-                // 2. Direct Place ID in URL parameter
-                match = Regex.Match(url, @"place_id=([a-zA-Z0-9\-_]+)");
+                // 2. ChIJ Place ID anywhere in URL (most common format)
+                match = Regex.Match(url, @"(ChIJ[a-zA-Z0-9\-_]{16,35})");
                 if (match.Success && IsValidPlaceId(match.Groups[1].Value))
                 {
                     return match.Groups[1].Value;
                 }
 
-                // 3. Look for Place ID after !1s (but validate it's actually a Place ID)
-                match = Regex.Match(url, @"!1s(ChIJ[a-zA-Z0-9\-_]{16,})");
-                if (match.Success)
+                // 3. Modern !1s format (2023+ URLs)
+                match = Regex.Match(url, @"!1s(ChIJ[a-zA-Z0-9\-_]{16,35})");
+                if (match.Success && IsValidPlaceId(match.Groups[1].Value))
                 {
                     return match.Groups[1].Value;
                 }
 
-                // 4. Look for Place ID after 1s (but be more selective)
-                match = Regex.Match(url, @"1s(ChIJ[a-zA-Z0-9\-_]{16,})");
-                if (match.Success)
+                // 4. !4m format (common in shared URLs)
+                match = Regex.Match(url, @"!4m.*?!1s(ChIJ[a-zA-Z0-9\-_]{16,35})");
+                if (match.Success && IsValidPlaceId(match.Groups[1].Value))
                 {
                     return match.Groups[1].Value;
                 }
 
-                // 5. Try to extract from data parameter (common in newer URLs)
-                match = Regex.Match(url, @"data=.*?(ChIJ[a-zA-Z0-9\-_]{16,})");
-                if (match.Success)
+                // 5. !3m format (another variant)
+                match = Regex.Match(url, @"!3m.*?!1s(ChIJ[a-zA-Z0-9\-_]{16,35})");
+                if (match.Success && IsValidPlaceId(match.Groups[1].Value))
                 {
                     return match.Groups[1].Value;
                 }
 
-                // 6. maps.google.com/?cid=<CID> - we can't easily convert CID to Place ID
-                match = Regex.Match(url, @"cid=([0-9]+)");
-                if (match.Success)
+                // 6. Data parameter extraction (encoded URLs)
+                match = Regex.Match(url, @"data=.*?(ChIJ[a-zA-Z0-9\-_]{16,35})");
+                if (match.Success && IsValidPlaceId(match.Groups[1].Value))
                 {
-                    // For CID, we need a different approach or API call to get Place ID
-                    // For now, return null and log that we found a CID
-                    return null; // We'll handle CID conversion separately if needed
+                    return match.Groups[1].Value;
+                }
+
+                // 7. URL path format /place/ChIJ...
+                match = Regex.Match(url, @"/place/(ChIJ[a-zA-Z0-9\-_]{16,35})");
+                if (match.Success && IsValidPlaceId(match.Groups[1].Value))
+                {
+                    return match.Groups[1].Value;
+                }
+
+                // 8. Try URL decoding first for encoded URLs
+                try
+                {
+                    var decodedUrl = System.Web.HttpUtility.UrlDecode(url);
+                    if (decodedUrl != url) // Only recurse if URL was actually encoded
+                    {
+                        var decodedResult = ExtractPlaceIdFromGoogleMapsUrl(decodedUrl);
+                        if (!string.IsNullOrEmpty(decodedResult))
+                            return decodedResult;
+                    }
+                }
+                catch
+                {
+                    // URL decoding failed, continue
                 }
 
                 return null;

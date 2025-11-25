@@ -1,0 +1,153 @@
+@using google_reviews.Controllers
+@{
+    ViewData["Title"] = "Cleanup Duplicate Companies";
+    var duplicateGroups = ViewBag.DuplicateGroups as List<DuplicateGroup> ?? new List<DuplicateGroup>();
+    var totalDuplicates = (int)(ViewBag.TotalDuplicates ?? 0);
+    var totalCompanies = (int)(ViewBag.TotalCompanies ?? 0);
+    var exactDuplicates = (int)(ViewBag.ExactDuplicates ?? 0);
+    var placeIdDuplicates = (int)(ViewBag.PlaceIdDuplicates ?? 0);
+}
+
+<div class="container mt-4">
+    <nav aria-label="breadcrumb">
+        <ol class="breadcrumb">
+            <li class="breadcrumb-item"><a asp-action="Index">Companies & Reviews</a></li>
+            <li class="breadcrumb-item active" aria-current="page">Cleanup Duplicates</li>
+        </ol>
+    </nav>
+
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h1><i class="fas fa-broom"></i> Cleanup Duplicate Companies</h1>
+        <a asp-action="Index" class="btn btn-outline-secondary">Back to Reviews</a>
+    </div>
+
+    <div class="alert alert-info">
+        <h5><i class="fas fa-info-circle"></i> Database Analysis</h5>
+        <p><strong>Total companies in database: @totalCompanies</strong></p>
+        <div class="row">
+            <div class="col-md-6">
+                <p><strong>Exact name duplicates:</strong> @exactDuplicates groups</p>
+            </div>
+            <div class="col-md-6">
+                <p><strong>Place ID duplicates:</strong> @placeIdDuplicates groups</p>
+            </div>
+        </div>
+        <p><strong>Total duplicate groups: @duplicateGroups.Count</strong></p>
+        <p><strong>Companies to be removed: @totalDuplicates</strong></p>
+
+        @if (totalDuplicates > 0)
+        {
+            <hr/>
+            <ul class="mb-0">
+                <li><strong>Strategy:</strong> Keep the oldest company record and delete newer duplicates</li>
+                <li><strong>Data Merging:</strong> Merge reviews and fill missing PlaceIDs/URLs from duplicates</li>
+                <li><strong>Review Handling:</strong> Transfer unique reviews, remove duplicate reviews</li>
+                <li><strong>Safety:</strong> This action cannot be undone!</li>
+            </ul>
+        }
+    </div>
+
+    @if (duplicateGroups.Any())
+    {
+        <div class="card mb-4">
+            <div class="card-header">
+                <h5>Duplicate Companies Preview</h5>
+                <small class="text-muted">Review the companies that will be affected by this cleanup</small>
+            </div>
+            <div class="card-body" style="max-height: 400px; overflow-y: auto;">
+                <div class="table-responsive">
+                    <table class="table table-sm">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Company Name / Place ID</th>
+                                <th>Type</th>
+                                <th>Count</th>
+                                <th>Action</th>
+                                <th>Details</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var group in duplicateGroups.Take(50))
+                            {
+                                <tr>
+                                    <td><strong>@group.Name</strong></td>
+                                    <td>
+                                        <span class="badge @(group.Type == "Exact" ? "bg-warning" : "bg-info")">@group.Type</span>
+                                    </td>
+                                    <td>
+                                        <span class="badge bg-danger">@group.Companies.Count duplicates</span>
+                                    </td>
+                                    <td>
+                                        <small class="text-success">
+                                            <i class="fas fa-check"></i> Keep oldest, delete @(group.Companies.Count - 1)
+                                        </small>
+                                    </td>
+                                    <td>
+                                        <small class="text-muted">
+                                            @{
+                                                var keepCompany = group.Companies.First();
+                                                var deleteCount = group.Companies.Count - 1;
+                                            }
+                                            Keep: @keepCompany.LastUpdated.ToString("MMM dd, yyyy")
+                                        </small>
+                                    </td>
+                                </tr>
+                            }
+                            @if (duplicateGroups.Count > 50)
+                            {
+                                <tr>
+                                    <td colspan="4" class="text-center text-muted">
+                                        <i class="fas fa-ellipsis-h"></i> ... and @(duplicateGroups.Count - 50) more duplicate groups
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-header bg-danger text-white">
+                <h5><i class="fas fa-exclamation-circle"></i> Final Confirmation Required</h5>
+            </div>
+            <div class="card-body">
+                <div class="alert alert-danger">
+                    <h6><strong>⚠️ WARNING: This action cannot be undone!</strong></h6>
+                    <p>This will permanently:</p>
+                    <ul>
+                        <li>Delete <strong>@totalDuplicates duplicate companies</strong></li>
+                        <li>Merge reviews from duplicates into the oldest company record</li>
+                        <li>Remove duplicate reviews (same author + time)</li>
+                        <li>Fill missing data (Place IDs, URLs) from duplicates</li>
+                    </ul>
+                </div>
+
+                <form asp-action="ExecuteCleanupDuplicates" method="post">
+                    @Html.AntiForgeryToken()
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <strong>Are you absolutely sure you want to proceed?</strong>
+                        </div>
+                        <div class="btn-group" role="group">
+                            <a asp-action="Index" class="btn btn-secondary">
+                                <i class="fas fa-times"></i> Cancel
+                            </a>
+                            <button type="submit" class="btn btn-danger" onclick="return confirm('FINAL WARNING: This will permanently delete @totalDuplicates companies. Are you absolutely sure?')">
+                                <i class="fas fa-broom"></i> Execute Cleanup
+                            </button>
+                        </div>
+                    </div>
+                </form>
+            </div>
+        </div>
+    }
+    else
+    {
+        <div class="alert alert-success">
+            <h5><i class="fas fa-check-circle"></i> No Duplicates Found</h5>
+            <p>Your database is clean! No duplicate companies were found out of @totalCompanies total companies.</p>
+            <a asp-action="Index" class="btn btn-success">Return to Reviews</a>
+        </div>
+    }
+</div>

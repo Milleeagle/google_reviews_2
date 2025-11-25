@@ -1,0 +1,3 @@
+Processed 512 pages for database 'aspnet-google_reviews', file 'aspnet-google_reviews' on file 1.
+Processed 2 pages for database 'aspnet-google_reviews', file 'aspnet-google_reviews_log' on file 1.
+BACKUP DATABASE successfully processed 514 pages in 0.055 seconds (72.940 MB/sec).

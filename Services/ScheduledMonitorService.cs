@@ -9,17 +9,20 @@ namespace google_reviews.Services
         private readonly ApplicationDbContext _context;
         private readonly IGooglePlacesService _googlePlacesService;
         private readonly IEmailService _emailService;
+        private readonly IExcelService _excelService;
         private readonly ILogger<ScheduledMonitorService> _logger;
 
         public ScheduledMonitorService(
             ApplicationDbContext context,
             IGooglePlacesService googlePlacesService,
             IEmailService emailService,
+            IExcelService excelService,
             ILogger<ScheduledMonitorService> logger)
         {
             _context = context;
             _googlePlacesService = googlePlacesService;
             _emailService = emailService;
+            _excelService = excelService;
             _logger = logger;
         }
 
@@ -123,9 +126,13 @@ namespace google_reviews.Services
                 execution.CompaniesWithIssues = report.CompaniesWithIssues;
                 execution.TotalBadReviews = report.TotalBadReviews;
 
-                // Send email report
-                var emailSent = await _emailService.SendReviewReportEmailAsync(
-                    monitor.EmailAddress, report, monitor.Name);
+                // Generate Excel attachment
+                var excelData = _excelService.GenerateReviewReportExcel(report);
+                var fileName = $"review_report_{monitor.Name.Replace(" ", "_")}_{DateTime.Now:yyyyMMdd_HHmmss}.xlsx";
+
+                // Send email report with Excel attachment
+                var emailSent = await _emailService.SendReviewReportEmailWithExcelAsync(
+                    monitor.EmailAddress, report, monitor.Name, excelData, fileName);
 
                 execution.EmailSent = emailSent;
                 if (!emailSent)

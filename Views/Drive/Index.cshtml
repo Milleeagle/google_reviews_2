@@ -1,6 +1,6 @@
 @model IEnumerable<google_reviews.Models.GoogleDriveDocument>
 @{
-    ViewData["Title"] = "Google Drive Documents";
+    ViewData["Title"] = "Import Companies";
 }
 
 <div class="container mt-4">
@@ -8,10 +8,20 @@
         <div class="col-md-12">
             <div class="d-flex justify-content-between align-items-center mb-4">
                 <h1>@ViewData["Title"]</h1>
-                @if (User.IsInRole("Admin"))
-                {
-                    <a asp-action="TestConnection" class="btn btn-secondary">Test Connection</a>
-                }
+                <div class="btn-group" role="group">
+                    @if (User.IsInRole("Admin"))
+                    {
+                        <a href="#bulkImportModal" class="btn btn-primary" data-bs-toggle="modal">
+                            <i class="fas fa-upload"></i> Bulk Import
+                        </a>
+                        <a asp-controller="Reviews" asp-action="ImportFromExcel" class="btn btn-success">
+                            <i class="fas fa-file-excel"></i> Import from Excel
+                        </a>
+                        <a asp-action="TestConnection" class="btn btn-secondary">
+                            <i class="fas fa-plug"></i> Test Connection
+                        </a>
+                    }
+                </div>
             </div>
 
             @if (TempData["Success"] != null)
@@ -131,6 +141,357 @@
         </div>
     </div>
 </div>
+
+<!-- Bulk Import Modal -->
+<div class="modal fade" id="bulkImportModal" tabindex="-1" aria-labelledby="bulkImportModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <form asp-action="BulkImport" method="post">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="bulkImportModalLabel">
+                        <i class="fas fa-upload"></i> Bulk Import Companies
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="alert alert-info">
+                        <h6><i class="fas fa-info-circle"></i> How to use Bulk Import:</h6>
+                        <ul class="mb-0">
+                            <li>Fill in the table below or paste data from Excel/Google Sheets</li>
+                            <li>Each row should contain: <strong>Company Name, Email Address, Place ID</strong></li>
+                            <li>Table will auto-expand when you paste multiple rows</li>
+                            <li>Leave Email or Place ID empty if not available</li>
+                        </ul>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label"><strong>Company Data:</strong></label>
+                        <div class="table-responsive" style="max-height: 400px; overflow-y: auto;">
+                            <table class="table table-bordered table-sm" id="bulkImportTable">
+                                <thead class="table-light sticky-top">
+                                    <tr>
+                                        <th style="width: 40%;">Company Name <span class="text-danger">*</span></th>
+                                        <th style="width: 35%;">Email Address</th>
+                                        <th style="width: 25%;">Place ID</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="bulkImportTableBody">
+                                    <!-- Initial 5 rows -->
+                                    <tr>
+                                        <td><input type="text" class="form-control form-control-sm company-name" placeholder="Company Name" data-row="0" data-col="0"></td>
+                                        <td><input type="text" class="form-control form-control-sm company-email" placeholder="email@company.com" data-row="0" data-col="1"></td>
+                                        <td><input type="text" class="form-control form-control-sm company-placeid" placeholder="ChIJ..." data-row="0" data-col="2"></td>
+                                    </tr>
+                                    <tr>
+                                        <td><input type="text" class="form-control form-control-sm company-name" placeholder="Company Name" data-row="1" data-col="0"></td>
+                                        <td><input type="text" class="form-control form-control-sm company-email" placeholder="email@company.com" data-row="1" data-col="1"></td>
+                                        <td><input type="text" class="form-control form-control-sm company-placeid" placeholder="ChIJ..." data-row="1" data-col="2"></td>
+                                    </tr>
+                                    <tr>
+                                        <td><input type="text" class="form-control form-control-sm company-name" placeholder="Company Name" data-row="2" data-col="0"></td>
+                                        <td><input type="text" class="form-control form-control-sm company-email" placeholder="email@company.com" data-row="2" data-col="1"></td>
+                                        <td><input type="text" class="form-control form-control-sm company-placeid" placeholder="ChIJ..." data-row="2" data-col="2"></td>
+                                    </tr>
+                                    <tr>
+                                        <td><input type="text" class="form-control form-control-sm company-name" placeholder="Company Name" data-row="3" data-col="0"></td>
+                                        <td><input type="text" class="form-control form-control-sm company-email" placeholder="email@company.com" data-row="3" data-col="1"></td>
+                                        <td><input type="text" class="form-control form-control-sm company-placeid" placeholder="ChIJ..." data-row="3" data-col="2"></td>
+                                    </tr>
+                                    <tr>
+                                        <td><input type="text" class="form-control form-control-sm company-name" placeholder="Company Name" data-row="4" data-col="0"></td>
+                                        <td><input type="text" class="form-control form-control-sm company-email" placeholder="email@company.com" data-row="4" data-col="1"></td>
+                                        <td><input type="text" class="form-control form-control-sm company-placeid" placeholder="ChIJ..." data-row="4" data-col="2"></td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                        <div class="d-flex justify-content-between align-items-center mt-2">
+                            <div class="form-text">
+                                <strong>Tip:</strong> Select all cells and paste from Excel/Sheets. Table will auto-expand.
+                            </div>
+                            <div>
+                                <button type="button" class="btn btn-sm btn-outline-secondary" onclick="addBulkImportRow()">
+                                    <i class="fas fa-plus"></i> Add Row
+                                </button>
+                                <button type="button" class="btn btn-sm btn-outline-danger" onclick="clearBulkImportTable()">
+                                    <i class="fas fa-trash"></i> Clear All
+                                </button>
+                            </div>
+                        </div>
+                        <input type="hidden" name="bulkData" id="hiddenBulkData">
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label"><strong>Import as:</strong></label>
+                        <div class="btn-group w-100" role="group" aria-label="Customer Status">
+                            <input type="radio" class="btn-check" name="customerStatus" id="bulkPotential" value="false" checked>
+                            <label class="btn btn-outline-info" for="bulkPotential">
+                                <i class="fas fa-search"></i> Potential Customers
+                            </label>
+
+                            <input type="radio" class="btn-check" name="customerStatus" id="bulkCurrent" value="true">
+                            <label class="btn btn-outline-success" for="bulkCurrent">
+                                <i class="fas fa-handshake"></i> Current Customers
+                            </label>
+                        </div>
+                    </div>
+
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" id="skipExisting" name="skipExisting" checked>
+                        <label class="form-check-label" for="skipExisting">
+                            Skip companies that already exist (based on Place ID)
+                        </label>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary" onclick="prepareBulkData()">
+                        <i class="fas fa-upload"></i> Import Companies
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+// Excel-like table functionality for bulk import
+let currentRowCount = 5;
+
+function addBulkImportRow() {
+    const tbody = document.getElementById('bulkImportTableBody');
+    const row = document.createElement('tr');
+
+    row.innerHTML = `
+        <td><input type="text" class="form-control form-control-sm company-name" placeholder="Company Name" data-row="${currentRowCount}" data-col="0"></td>
+        <td><input type="text" class="form-control form-control-sm company-email" placeholder="email@company.com" data-row="${currentRowCount}" data-col="1"></td>
+        <td><input type="text" class="form-control form-control-sm company-placeid" placeholder="ChIJ..." data-row="${currentRowCount}" data-col="2"></td>
+    `;
+
+    tbody.appendChild(row);
+    currentRowCount++;
+
+    // Add event listeners to new inputs
+    addEventListenersToRow(row);
+}
+
+function addEventListenersToRow(row) {
+    const inputs = row.querySelectorAll('input');
+    inputs.forEach(input => {
+        input.addEventListener('paste', handlePaste);
+        input.addEventListener('input', handleInput);
+        input.addEventListener('keydown', handleNavigation);
+    });
+}
+
+function clearBulkImportTable() {
+    const tbody = document.getElementById('bulkImportTableBody');
+    tbody.innerHTML = `
+        <tr>
+            <td><input type="text" class="form-control form-control-sm company-name" placeholder="Company Name" data-row="0" data-col="0"></td>
+            <td><input type="text" class="form-control form-control-sm company-email" placeholder="email@company.com" data-row="0" data-col="1"></td>
+            <td><input type="text" class="form-control form-control-sm company-placeid" placeholder="ChIJ..." data-row="0" data-col="2"></td>
+        </tr>
+        <tr>
+            <td><input type="text" class="form-control form-control-sm company-name" placeholder="Company Name" data-row="1" data-col="0"></td>
+            <td><input type="text" class="form-control form-control-sm company-email" placeholder="email@company.com" data-row="1" data-col="1"></td>
+            <td><input type="text" class="form-control form-control-sm company-placeid" placeholder="ChIJ..." data-row="1" data-col="2"></td>
+        </tr>
+        <tr>
+            <td><input type="text" class="form-control form-control-sm company-name" placeholder="Company Name" data-row="2" data-col="0"></td>
+            <td><input type="text" class="form-control form-control-sm company-email" placeholder="email@company.com" data-row="2" data-col="1"></td>
+            <td><input type="text" class="form-control form-control-sm company-placeid" placeholder="ChIJ..." data-row="2" data-col="2"></td>
+        </tr>
+        <tr>
+            <td><input type="text" class="form-control form-control-sm company-name" placeholder="Company Name" data-row="3" data-col="0"></td>
+            <td><input type="text" class="form-control form-control-sm company-email" placeholder="email@company.com" data-row="3" data-col="1"></td>
+            <td><input type="text" class="form-control form-control-sm company-placeid" placeholder="ChIJ..." data-row="3" data-col="2"></td>
+        </tr>
+        <tr>
+            <td><input type="text" class="form-control form-control-sm company-name" placeholder="Company Name" data-row="4" data-col="0"></td>
+            <td><input type="text" class="form-control form-control-sm company-email" placeholder="email@company.com" data-row="4" data-col="1"></td>
+            <td><input type="text" class="form-control form-control-sm company-placeid" placeholder="ChIJ..." data-row="4" data-col="2"></td>
+        </tr>
+    `;
+    currentRowCount = 5;
+    initializeBulkImportTable();
+}
+
+function handlePaste(event) {
+    event.preventDefault();
+
+    const pastedData = (event.clipboardData || window.clipboardData).getData('text');
+    const rows = pastedData.split(/\r?\n/).filter(row => row.trim() !== '');
+
+    const currentInput = event.target;
+    const startRow = parseInt(currentInput.dataset.row);
+    const startCol = parseInt(currentInput.dataset.col);
+
+    // Calculate how many rows we need
+    const requiredRows = startRow + rows.length;
+    while (currentRowCount < requiredRows) {
+        addBulkImportRow();
+    }
+
+    // Fill the data
+    rows.forEach((rowData, rowIndex) => {
+        const columns = rowData.split(/\t|,|;/).map(col => col.trim());
+
+        columns.forEach((cellData, colIndex) => {
+            if (startCol + colIndex < 3) { // Only 3 columns in our table
+                const targetRow = startRow + rowIndex;
+                const targetCol = startCol + colIndex;
+                const input = document.querySelector(`input[data-row="${targetRow}"][data-col="${targetCol}"]`);
+                if (input) {
+                    input.value = cellData;
+                }
+            }
+        });
+    });
+}
+
+function handleInput(event) {
+    const input = event.target;
+    const row = parseInt(input.dataset.row);
+
+    // Auto-add row if we're typing in the last row
+    if (row === currentRowCount - 1 && input.value.trim() !== '') {
+        addBulkImportRow();
+    }
+}
+
+function handleNavigation(event) {
+    const input = event.target;
+    const row = parseInt(input.dataset.row);
+    const col = parseInt(input.dataset.col);
+
+    let targetRow = row;
+    let targetCol = col;
+
+    switch(event.key) {
+        case 'Tab':
+            event.preventDefault();
+            if (event.shiftKey) {
+                // Shift+Tab - go left
+                if (col > 0) {
+                    targetCol = col - 1;
+                } else if (row > 0) {
+                    targetRow = row - 1;
+                    targetCol = 2;
+                }
+            } else {
+                // Tab - go right
+                if (col < 2) {
+                    targetCol = col + 1;
+                } else if (row < currentRowCount - 1) {
+                    targetRow = row + 1;
+                    targetCol = 0;
+                } else {
+                    // Add new row if at end
+                    addBulkImportRow();
+                    targetRow = row + 1;
+                    targetCol = 0;
+                }
+            }
+            break;
+
+        case 'Enter':
+            event.preventDefault();
+            if (row < currentRowCount - 1) {
+                targetRow = row + 1;
+            } else {
+                addBulkImportRow();
+                targetRow = row + 1;
+            }
+            break;
+
+        case 'ArrowUp':
+            if (row > 0) {
+                targetRow = row - 1;
+            }
+            break;
+
+        case 'ArrowDown':
+            if (row < currentRowCount - 1) {
+                targetRow = row + 1;
+            } else {
+                addBulkImportRow();
+                targetRow = row + 1;
+            }
+            break;
+
+        case 'ArrowLeft':
+            if (col > 0) {
+                targetCol = col - 1;
+            }
+            break;
+
+        case 'ArrowRight':
+            if (col < 2) {
+                targetCol = col + 1;
+            }
+            break;
+    }
+
+    if (targetRow !== row || targetCol !== col) {
+        const targetInput = document.querySelector(`input[data-row="${targetRow}"][data-col="${targetCol}"]`);
+        if (targetInput) {
+            targetInput.focus();
+        }
+    }
+}
+
+function prepareBulkData() {
+    const inputs = document.querySelectorAll('#bulkImportTable input');
+    const rows = [];
+
+    // Group inputs by row
+    const rowData = {};
+    inputs.forEach(input => {
+        const row = input.dataset.row;
+        const col = input.dataset.col;
+
+        if (!rowData[row]) {
+            rowData[row] = {};
+        }
+        rowData[row][col] = input.value.trim();
+    });
+
+    // Convert to tab-separated format
+    Object.keys(rowData).forEach(rowIndex => {
+        const row = rowData[rowIndex];
+        const name = row[0] || '';
+        const email = row[1] || '';
+        const placeId = row[2] || '';
+
+        if (name) { // Only include rows with a company name
+            rows.push([name, email, placeId].join('\t'));
+        }
+    });
+
+    document.getElementById('hiddenBulkData').value = rows.join('\n');
+}
+
+function initializeBulkImportTable() {
+    // Add event listeners to all existing inputs
+    const inputs = document.querySelectorAll('#bulkImportTable input');
+    inputs.forEach(input => {
+        input.addEventListener('paste', handlePaste);
+        input.addEventListener('input', handleInput);
+        input.addEventListener('keydown', handleNavigation);
+    });
+}
+
+// Initialize when modal opens
+document.getElementById('bulkImportModal').addEventListener('shown.bs.modal', function () {
+    initializeBulkImportTable();
+    // Focus first input
+    const firstInput = document.querySelector('#bulkImportTable input');
+    if (firstInput) {
+        firstInput.focus();
+    }
+});
+</script>
 
 @functions {
     private string GetFriendlyMimeType(string mimeType)

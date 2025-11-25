@@ -1,7 +1,59 @@
 @model List<google_reviews.Models.Company>
 @{
     ViewData["Title"] = "Companies & Reviews";
+    var currentLetter = ViewBag.CurrentLetter as string ?? "A";
+    var availableLetters = ViewBag.AvailableLetters as List<string> ?? new List<string>();
+    var totalCompanies = (int)(ViewBag.TotalCompanies ?? 0);
+    var currentCustomerCount = (int)(ViewBag.CurrentCustomerCount ?? 0);
+    var potentialCustomerCount = (int)(ViewBag.PotentialCustomerCount ?? 0);
 }
+
+<style>
+@@keyframes pulse {
+    0% { transform: scale(1); }
+    50% { transform: scale(1.05); }
+    100% { transform: scale(1); }
+}
+</style>
+
+<!-- Alphabetical Navigation -->
+<div class="card mb-4">
+    <div class="card-body py-2">
+        <div class="d-flex justify-content-between align-items-center">
+            <div>
+                <h6 class="card-title mb-1">
+                    <i class="fas fa-filter"></i> Filter by First Letter
+                    <span class="badge bg-primary">@currentLetter</span>
+                </h6>
+                <small class="text-muted">
+                    Showing @Model.Count() of @totalCompanies total companies
+                    (@currentCustomerCount Current, @potentialCustomerCount Potential)
+                </small>
+            </div>
+            <div class="btn-group btn-group-sm" role="group">
+                <button type="button" class="btn btn-outline-danger btn-sm" onclick="bulkDeleteAllPotential()" id="bulkDeleteAllPotentialBtn" @(potentialCustomerCount == 0 ? "disabled" : "")>
+                    <i class="fas fa-trash"></i> Delete All Potential (@potentialCustomerCount)
+                </button>
+            </div>
+        </div>
+        <div class="mt-2">
+            <div class="btn-group btn-group-sm flex-wrap" role="group">
+                @foreach (var letter in "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789".ToCharArray())
+                {
+                    var hasCompanies = availableLetters.Contains(letter.ToString());
+                    var isActive = letter.ToString() == currentLetter;
+                    var btnClass = isActive ? "btn-primary" : (hasCompanies ? "btn-outline-primary" : "btn-outline-secondary");
+
+                    <a href="@Url.Action("Index", new { letter = letter.ToString() })"
+                       class="btn @btnClass @(!hasCompanies ? "disabled" : "")"
+                       @(!hasCompanies ? "tabindex=\"-1\"" : "")>
+                        @letter
+                    </a>
+                }
+            </div>
+        </div>
+    </div>
+</div>
 
 <div class="d-flex justify-content-between align-items-center mb-4">
     <h2>Companies & Reviews</h2>
@@ -10,6 +62,9 @@
         <div class="btn-group" role="group">
             <a asp-action="AddCompany" class="btn btn-primary">
                 <i class="fas fa-plus"></i> Add Company
+            </a>
+            <a asp-action="ImportFromExcel" class="btn btn-success">
+                <i class="fas fa-file-excel"></i> Import from Excel
             </a>
             <a asp-action="TestApi" class="btn btn-outline-secondary">
                 <i class="fas fa-cog"></i> Test API
@@ -20,9 +75,24 @@
             <a asp-controller="Drive" asp-action="SimplePlaceIdFinder" class="btn btn-outline-success">
                 <i class="fas fa-map-marker-alt"></i> Place ID Finder
             </a>
+            <a asp-action="CleanupDuplicates" class="btn btn-outline-warning">
+                <i class="fas fa-broom"></i> Cleanup Duplicates
+            </a>
             <a asp-action="ReviewMonitor" class="btn btn-outline-warning">
                 <i class="fas fa-search"></i> Review Monitor
             </a>
+            <a asp-action="BatchReviews" class="btn btn-outline-primary" onclick="return confirmApiCallBatch()">
+                <i class="fas fa-download"></i> Batch Reviews
+            </a>
+            <a asp-action="FetchNewCompanyReviews" class="btn btn-outline-success" onclick="return confirmApiCallNew(@(Model.Count(c => !string.IsNullOrEmpty(c.PlaceId) && c.IsActive && !c.Reviews.Any())))">
+                <i class="fas fa-plus-circle"></i> Fetch New Company Reviews
+            </a>
+            <button type="button" class="btn btn-danger border border-warning border-2" onclick="confirmDeleteAllCompanies()"
+                    title="⚠️ EXTREME DANGER: This will permanently delete ALL companies and ALL reviews!"
+                    style="animation: pulse 2s infinite; box-shadow: 0 0 10px rgba(220, 53, 69, 0.5);">
+                <i class="fas fa-exclamation-triangle text-warning"></i>
+                <strong>⚠️ DELETE ALL ⚠️</strong>
+            </button>
         </div>
     }
 </div>
@@ -51,21 +121,64 @@
     </div>
 }
 
-@if (Model.Any())
-{
-    <div class="row">
-        @foreach (var company in Model)
+<!-- Customer Status Tabs -->
+<ul class="nav nav-tabs mb-4" id="customerTabs" role="tablist">
+    <li class="nav-item" role="presentation">
+        <button class="nav-link active" id="current-customers-tab" data-bs-toggle="tab" data-bs-target="#current-customers" type="button" role="tab">
+            <i class="fas fa-handshake"></i> Current Customers (@currentCustomerCount)
+        </button>
+    </li>
+    <li class="nav-item" role="presentation">
+        <button class="nav-link" id="potential-customers-tab" data-bs-toggle="tab" data-bs-target="#potential-customers" type="button" role="tab">
+            <i class="fas fa-search"></i> Potential Customers (@potentialCustomerCount)
+        </button>
+    </li>
+</ul>
+
+<div class="tab-content" id="customerTabContent">
+    <!-- Current Customers Tab -->
+    <div class="tab-pane fade show active" id="current-customers" role="tabpanel">
+        @if (Model.Where(c => c.IsCurrentCustomer).Any())
         {
+            <!-- Bulk Actions Bar for Current Customers -->
+            <div class="card mb-3">
+                <div class="card-body py-2">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div class="d-flex align-items-center">
+                            <input type="checkbox" class="form-check-input me-2" id="selectAllCurrent" onchange="toggleAllCompanies('current', this.checked)">
+                            <label for="selectAllCurrent" class="form-check-label small">Select All</label>
+                            <span class="ms-3 small text-muted">
+                                <span id="selectedCurrentCount">0</span> selected
+                            </span>
+                        </div>
+                        <div class="btn-group btn-group-sm" role="group">
+                            <button type="button" class="btn btn-outline-warning" onclick="bulkTransferToPotential()" disabled id="bulkTransferCurrentBtn">
+                                <i class="fas fa-exchange-alt"></i> Move to Potential
+                            </button>
+                            <button type="button" class="btn btn-outline-danger" onclick="bulkDeleteCompanies('current')" disabled id="bulkDeleteCurrentBtn">
+                                <i class="fas fa-trash"></i> Delete Selected
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="row">
+                @foreach (var company in Model.Where(c => c.IsCurrentCustomer))
+                {
             <div class="col-md-6 col-lg-4 mb-4">
                 <div class="card h-100">
                     <div class="card-body">
-                        <h5 class="card-title">
-                            @company.Name
-                            @if (!company.IsActive)
-                            {
-                                <span class="badge bg-secondary">Inactive</span>
-                            }
-                        </h5>
+                        <div class="d-flex justify-content-between align-items-start mb-2">
+                            <h5 class="card-title flex-grow-1">
+                                @company.Name
+                                @if (!company.IsActive)
+                                {
+                                    <span class="badge bg-secondary">Inactive</span>
+                                }
+                                <span class="badge bg-success">Customer</span>
+                            </h5>
+                            <input type="checkbox" class="form-check-input company-checkbox-current" value="@company.Id" onchange="updateBulkActions('current')">
+                        </div>
                         
                         <div class="mb-2">
                             <small class="text-muted">
@@ -104,27 +217,181 @@
                         {
                             <small class="text-muted d-block">Place ID: @company.PlaceId</small>
                         }
+                        @if (!string.IsNullOrEmpty(company.EmailAddress))
+                        {
+                            <small class="text-muted d-block"><i class="fas fa-envelope"></i> @company.EmailAddress</small>
+                        }
                     </div>
                     <div class="card-footer">
-                        <a asp-action="Company" asp-route-id="@company.Id" class="btn btn-outline-primary btn-sm">
+                        <a asp-action="Company" asp-route-id="@company.Id" class="btn btn-primary btn-sm">
                             <i class="fas fa-eye"></i> View Details
                         </a>
-                        @if (User.IsInRole("Admin") && !string.IsNullOrEmpty(company.PlaceId))
+                        @if (User.IsInRole("Admin"))
                         {
-                            <form asp-action="RefreshReviews" asp-route-id="@company.Id" method="post" class="d-inline">
-                                <button type="submit" class="btn btn-outline-success btn-sm" 
-                                        onclick="this.innerHTML='<i class=\'fas fa-spinner fa-spin\'></i> Refreshing...';">
-                                    <i class="fas fa-sync-alt"></i> Refresh
+                            <form asp-action="ToggleCustomerStatus" asp-route-id="@company.Id" method="post" class="d-inline">
+                                <button type="submit" class="btn btn-outline-info btn-sm" title="Move to Potential Customers">
+                                    <i class="fas fa-arrow-right"></i> Make Potential
                                 </button>
                             </form>
+                            @if (!string.IsNullOrEmpty(company.PlaceId))
+                            {
+                                <form asp-action="RefreshReviews" asp-route-id="@company.Id" method="post" class="d-inline" onsubmit="return confirmApiCallAndSpin(event, this)">
+                                    <button type="submit" class="btn btn-outline-success btn-sm">
+                                        <i class="fas fa-sync-alt"></i> Refresh (API)
+                                    </button>
+                                </form>
+                                <form asp-action="ScrapeReviews" asp-route-id="@company.Id" method="post" class="d-inline" onsubmit="return confirmScrape(event, this)">
+                                    <button type="submit" class="btn btn-success btn-sm">
+                                        <i class="fas fa-robot"></i> Scrape (FREE)
+                                    </button>
+                                </form>
+                            }
                         }
                     </div>
                 </div>
             </div>
+                }
+            </div>
+        }
+        else
+        {
+            <div class="text-center py-5">
+                <i class="fas fa-handshake fa-3x text-muted mb-3"></i>
+                <h4 class="text-muted">No Current Customers</h4>
+                <p class="text-muted">Companies marked as current customers will appear here.</p>
+            </div>
         }
     </div>
-}
-else
+
+    <!-- Potential Customers Tab -->
+    <div class="tab-pane fade" id="potential-customers" role="tabpanel">
+        @if (Model.Where(c => !c.IsCurrentCustomer).Any())
+        {
+            <!-- Bulk Actions Bar for Potential Customers -->
+            <div class="card mb-3">
+                <div class="card-body py-2">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div class="d-flex align-items-center">
+                            <input type="checkbox" class="form-check-input me-2" id="selectAllPotential" onchange="toggleAllCompanies('potential', this.checked)">
+                            <label for="selectAllPotential" class="form-check-label small">Select All</label>
+                            <span class="ms-3 small text-muted">
+                                <span id="selectedPotentialCount">0</span> selected
+                            </span>
+                        </div>
+                        <div class="btn-group btn-group-sm" role="group">
+                            <button type="button" class="btn btn-outline-success" onclick="bulkTransferToCurrent()" disabled id="bulkTransferPotentialBtn">
+                                <i class="fas fa-arrow-right"></i> Move to Current
+                            </button>
+                            <button type="button" class="btn btn-outline-danger" onclick="bulkDeleteCompanies('potential')" disabled id="bulkDeletePotentialBtn">
+                                <i class="fas fa-trash"></i> Delete Selected
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="row">
+                @foreach (var company in Model.Where(c => !c.IsCurrentCustomer))
+                {
+                    <div class="col-md-6 col-lg-4 mb-4">
+                        <div class="card h-100">
+                            <div class="card-body">
+                                <div class="d-flex justify-content-between align-items-start mb-2">
+                                    <h5 class="card-title flex-grow-1">
+                                        @company.Name
+                                        @if (!company.IsActive)
+                                        {
+                                            <span class="badge bg-secondary">Inactive</span>
+                                        }
+                                        <span class="badge bg-info">Potential</span>
+                                    </h5>
+                                    <input type="checkbox" class="form-check-input company-checkbox-potential" value="@company.Id" onchange="updateBulkActions('potential')">
+                                </div>
+
+                                <div class="mb-2">
+                                    <small class="text-muted">
+                                        <i class="fas fa-clock"></i>
+                                        Last updated: @company.LastUpdated.ToString("MMM dd, yyyy HH:mm")
+                                    </small>
+                                </div>
+
+                                @if (company.Reviews.Any())
+                                {
+                                    <div class="mb-2">
+                                        <span class="text-warning">
+                                            @for (int i = 1; i <= 5; i++)
+                                            {
+                                                if (i <= Math.Round(company.Reviews.Average(r => r.Rating)))
+                                                {
+                                                    <i class="fas fa-star"></i>
+                                                }
+                                                else
+                                                {
+                                                    <i class="far fa-star"></i>
+                                                }
+                                            }
+                                        </span>
+                                        <small class="text-muted">
+                                            (@company.Reviews.Average(r => r.Rating).ToString("F1")) - @company.Reviews.Count reviews
+                                        </small>
+                                    </div>
+                                }
+                                else
+                                {
+                                    <p class="text-muted">No reviews available</p>
+                                }
+
+                                @if (!string.IsNullOrEmpty(company.PlaceId))
+                                {
+                                    <small class="text-muted d-block">Place ID: @company.PlaceId</small>
+                                }
+                                @if (!string.IsNullOrEmpty(company.EmailAddress))
+                                {
+                                    <small class="text-muted d-block"><i class="fas fa-envelope"></i> @company.EmailAddress</small>
+                                }
+                            </div>
+                            <div class="card-footer">
+                                <a asp-action="Company" asp-route-id="@company.Id" class="btn btn-primary btn-sm">
+                                    <i class="fas fa-eye"></i> View Details
+                                </a>
+                                @if (User.IsInRole("Admin"))
+                                {
+                                    <form asp-action="ToggleCustomerStatus" asp-route-id="@company.Id" method="post" class="d-inline">
+                                        <button type="submit" class="btn btn-outline-success btn-sm" title="Move to Current Customers">
+                                            <i class="fas fa-arrow-left"></i> Make Customer
+                                        </button>
+                                    </form>
+                                    @if (!string.IsNullOrEmpty(company.PlaceId))
+                                    {
+                                        <form asp-action="RefreshReviews" asp-route-id="@company.Id" method="post" class="d-inline" onsubmit="return confirmApiCallAndSpin(event, this)">
+                                            <button type="submit" class="btn btn-outline-warning btn-sm">
+                                                <i class="fas fa-sync-alt"></i> Refresh (API)
+                                            </button>
+                                        </form>
+                                        <form asp-action="ScrapeReviews" asp-route-id="@company.Id" method="post" class="d-inline" onsubmit="return confirmScrape(event, this)">
+                                            <button type="submit" class="btn btn-success btn-sm">
+                                                <i class="fas fa-robot"></i> Scrape (FREE)
+                                            </button>
+                                        </form>
+                                    }
+                                }
+                            </div>
+                        </div>
+                    </div>
+                }
+            </div>
+        }
+        else
+        {
+            <div class="text-center py-5">
+                <i class="fas fa-search fa-3x text-muted mb-3"></i>
+                <h4 class="text-muted">No Potential Customers</h4>
+                <p class="text-muted">Companies not marked as current customers will appear here.</p>
+            </div>
+        }
+    </div>
+</div>
+
+@if (!Model.Any())
 {
     <div class="text-center py-5">
         <i class="fas fa-building fa-3x text-muted mb-3"></i>
@@ -172,3 +439,237 @@ else
         </div>
     </div>
 </div>
+
+<script>
+// API Cost Warning
+function confirmApiCallBatch() {
+    return confirm('⚠️ API Cost Warning\n\nThis will take you to the Batch Reviews page where you can select which companies to refresh.\n\nCost: ~$2.00 per 1,000 API requests\n\nDo you want to proceed?');
+}
+
+function confirmApiCallNew(count) {
+    if (count === 0) {
+        alert('No new companies found that need reviews fetched.');
+        return false;
+    }
+    const cost = (count * 2 / 1000).toFixed(2);
+    return confirm('⚠️ API Cost Warning\n\nThis will fetch reviews for ' + count + ' new companies.\n\nEstimated cost: ~$' + cost + ' (' + count + ' requests × $2.00/1000)\n\nDo you want to proceed?');
+}
+
+function confirmApiCallAndSpin(event, form) {
+    const cost = (1 * 2 / 1000).toFixed(4);
+    if (confirm('⚠️ API Cost Warning\n\nThis will make 1 Google Places API request.\n\nCost: ~$' + cost + ' ($2.00 per 1,000 requests)\n\nDo you want to proceed?')) {
+        // Change button text to show loading
+        const button = form.querySelector('button[type="submit"]');
+        if (button) {
+            button.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Refreshing...';
+            button.disabled = true;
+        }
+        return true;
+    }
+    return false;
+}
+
+function confirmScrape(event, form) {
+    if (confirm('🤖 Free Web Scraping\n\nThis will scrape reviews directly from Google Maps (NO API cost).\n\nNote: This takes longer (~10-15 seconds) but is completely FREE!\n\nDo you want to proceed?')) {
+        // Change button text to show loading
+        const button = form.querySelector('button[type="submit"]');
+        if (button) {
+            button.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Scraping...';
+            button.disabled = true;
+        }
+        return true;
+    }
+    return false;
+}
+
+// Bulk Actions JavaScript
+function toggleAllCompanies(type, checked) {
+    const checkboxes = document.querySelectorAll(`.company-checkbox-${type}`);
+    checkboxes.forEach(checkbox => {
+        checkbox.checked = checked;
+    });
+    updateBulkActions(type);
+}
+
+function updateBulkActions(type) {
+    const checkboxes = document.querySelectorAll(`.company-checkbox-${type}:checked`);
+    const count = checkboxes.length;
+
+    // Update count display
+    document.getElementById(`selected${type.charAt(0).toUpperCase() + type.slice(1)}Count`).textContent = count;
+
+    // Update button states
+    const transferBtn = document.getElementById(`bulkTransfer${type.charAt(0).toUpperCase() + type.slice(1)}Btn`);
+    const deleteBtn = document.getElementById(`bulkDelete${type.charAt(0).toUpperCase() + type.slice(1)}Btn`);
+
+    if (transferBtn) transferBtn.disabled = count === 0;
+    if (deleteBtn) deleteBtn.disabled = count === 0;
+
+    // Update select all checkbox
+    const selectAllCheckbox = document.getElementById(`selectAll${type.charAt(0).toUpperCase() + type.slice(1)}`);
+    const allCheckboxes = document.querySelectorAll(`.company-checkbox-${type}`);
+
+    if (allCheckboxes.length > 0) {
+        selectAllCheckbox.indeterminate = count > 0 && count < allCheckboxes.length;
+        selectAllCheckbox.checked = count === allCheckboxes.length;
+    }
+}
+
+function getSelectedCompanyIds(type) {
+    const checkboxes = document.querySelectorAll(`.company-checkbox-${type}:checked`);
+    return Array.from(checkboxes).map(cb => cb.value);
+}
+
+function bulkTransferToCurrent() {
+    const selectedIds = getSelectedCompanyIds('potential');
+    if (selectedIds.length === 0) return;
+
+    if (confirm(`Are you sure you want to move ${selectedIds.length} companies to Current Customers?`)) {
+        bulkUpdateCustomerStatus(selectedIds, true);
+    }
+}
+
+function bulkTransferToPotential() {
+    const selectedIds = getSelectedCompanyIds('current');
+    if (selectedIds.length === 0) return;
+
+    if (confirm(`Are you sure you want to move ${selectedIds.length} companies to Potential Customers?`)) {
+        bulkUpdateCustomerStatus(selectedIds, false);
+    }
+}
+
+function bulkDeleteAllPotential() {
+    const potentialCount = @potentialCustomerCount;
+    if (potentialCount === 0) return;
+
+    if (confirm(`Are you sure you want to delete ALL ${potentialCount} potential customers starting with "@currentLetter"? This action cannot be undone.`)) {
+        // Create form and submit
+        const form = document.createElement('form');
+        form.method = 'POST';
+        form.action = '@Url.Action("BulkDeleteAllPotential", "Reviews")';
+
+        // Add anti-forgery token
+        const token = document.querySelector('input[name="__RequestVerificationToken"]').value;
+        const tokenInput = document.createElement('input');
+        tokenInput.type = 'hidden';
+        tokenInput.name = '__RequestVerificationToken';
+        tokenInput.value = token;
+        form.appendChild(tokenInput);
+
+        // Add current letter
+        const letterInput = document.createElement('input');
+        letterInput.type = 'hidden';
+        letterInput.name = 'letter';
+        letterInput.value = '@currentLetter';
+        form.appendChild(letterInput);
+
+        document.body.appendChild(form);
+        form.submit();
+    }
+}
+
+function bulkDeleteCompanies(type) {
+    const selectedIds = getSelectedCompanyIds(type);
+    if (selectedIds.length === 0) return;
+
+    if (confirm(`Are you sure you want to delete ${selectedIds.length} companies? This action cannot be undone.`)) {
+        // Create form and submit
+        const form = document.createElement('form');
+        form.method = 'POST';
+        form.action = '@Url.Action("BulkDeleteCompanies", "Reviews")';
+
+        // Add anti-forgery token
+        const token = document.querySelector('input[name="__RequestVerificationToken"]').value;
+        const tokenInput = document.createElement('input');
+        tokenInput.type = 'hidden';
+        tokenInput.name = '__RequestVerificationToken';
+        tokenInput.value = token;
+        form.appendChild(tokenInput);
+
+        // Add selected IDs
+        selectedIds.forEach(id => {
+            const input = document.createElement('input');
+            input.type = 'hidden';
+            input.name = 'companyIds';
+            input.value = id;
+            form.appendChild(input);
+        });
+
+        document.body.appendChild(form);
+        form.submit();
+    }
+}
+
+function bulkUpdateCustomerStatus(companyIds, isCurrentCustomer) {
+    // Create form and submit
+    const form = document.createElement('form');
+    form.method = 'POST';
+    form.action = '@Url.Action("BulkUpdateCustomerStatus", "Reviews")';
+
+    // Add anti-forgery token
+    const token = document.querySelector('input[name="__RequestVerificationToken"]').value;
+    const tokenInput = document.createElement('input');
+    tokenInput.type = 'hidden';
+    tokenInput.name = '__RequestVerificationToken';
+    tokenInput.value = token;
+    form.appendChild(tokenInput);
+
+    // Add selected IDs
+    companyIds.forEach(id => {
+        const input = document.createElement('input');
+        input.type = 'hidden';
+        input.name = 'companyIds';
+        input.value = id;
+        form.appendChild(input);
+    });
+
+    // Add customer status
+    const statusInput = document.createElement('input');
+    statusInput.type = 'hidden';
+    statusInput.name = 'isCurrentCustomer';
+    statusInput.value = isCurrentCustomer.toString();
+    form.appendChild(statusInput);
+
+    document.body.appendChild(form);
+    form.submit();
+}
+
+function confirmDeleteAllCompanies() {
+    // First confirmation with strong warning
+    if (confirm('⚠️ DANGER: This will permanently delete ALL companies and their reviews!\n\nThis action cannot be undone and will remove all data.\n\nAre you absolutely sure you want to continue?')) {
+
+        // Second confirmation to double-check
+        if (confirm('🚨 FINAL WARNING 🚨\n\nYou are about to delete EVERYTHING:\n- All companies\n- All reviews\n- All associated data\n\nThis is PERMANENT and IRREVERSIBLE!\n\nType "DELETE ALL" if you want to proceed, or click Cancel to abort.')) {
+
+            // Third step: require typing confirmation
+            const confirmation = prompt('To confirm this dangerous action, please type exactly: DELETE ALL COMPANIES');
+
+            if (confirmation === 'DELETE ALL COMPANIES') {
+                // Create and submit the delete form
+                const form = document.createElement('form');
+                form.method = 'POST';
+                form.action = '@Url.Action("DeleteAllCompanies", "Reviews")';
+
+                // Add anti-forgery token
+                const token = document.querySelector('input[name="__RequestVerificationToken"]').value;
+                const tokenInput = document.createElement('input');
+                tokenInput.type = 'hidden';
+                tokenInput.name = '__RequestVerificationToken';
+                tokenInput.value = token;
+                form.appendChild(tokenInput);
+
+                document.body.appendChild(form);
+                form.submit();
+            } else if (confirmation !== null) {
+                alert('Confirmation text did not match. Operation cancelled for safety.');
+            }
+        }
+    }
+}
+
+// Initialize on page load
+document.addEventListener('DOMContentLoaded', function() {
+    updateBulkActions('current');
+    updateBulkActions('potential');
+});
+</script>

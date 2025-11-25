@@ -52,6 +52,7 @@
                         <div class="btn-group btn-group-sm" role="group">
                             <button type="button" class="btn btn-outline-primary" onclick="selectAll()">Select All</button>
                             <button type="button" class="btn btn-outline-secondary" onclick="selectNone()">Select None</button>
+                            <button type="button" class="btn btn-outline-success" onclick="selectValid()">Select Valid Only</button>
                             <button type="button" class="btn btn-outline-info" onclick="selectNew()">Select New Only</button>
                         </div>
                     </div>
@@ -78,10 +79,10 @@
                                         {
                                             <tr class="@(company.AlreadyExists ? "table-warning" : "")">
                                                 <td>
-                                                    <input type="checkbox" 
-                                                           name="selectedRows" 
-                                                           value="@company.RowNumber" 
-                                                           class="company-checkbox @(company.AlreadyExists ? "existing-company" : "new-company")"
+                                                    <input type="checkbox"
+                                                           name="selectedRows"
+                                                           value="@company.RowNumber"
+                                                           class="company-checkbox @(company.AlreadyExists ? "existing-company" : (!string.IsNullOrEmpty(company.Name) ? "valid-company new-company" : "invalid-company"))"
                                                            @(company.AlreadyExists ? "disabled" : "") />
                                                 </td>
                                                 <td>@company.RowNumber</td>
@@ -193,10 +194,30 @@
                                     }
                                 </small>
                             </div>
-                            <div>
-                                <button type="submit" class="btn btn-primary" id="importButton" disabled>
-                                    <i class="fas fa-download"></i> Import Selected Companies
-                                </button>
+                            <div class="d-flex align-items-center gap-3">
+                                <!-- Customer Status Selection -->
+                                <div class="form-group mb-0">
+                                    <label class="form-label mb-1"><strong>Import as:</strong></label>
+                                    <div class="btn-group" role="group" aria-label="Customer Status">
+                                        <input type="radio" class="btn-check" name="customerStatus" id="potential" value="false" checked>
+                                        <label class="btn btn-outline-info" for="potential">
+                                            <i class="fas fa-search"></i> Potential Customers
+                                        </label>
+
+                                        <input type="radio" class="btn-check" name="customerStatus" id="current" value="true">
+                                        <label class="btn btn-outline-success" for="current">
+                                            <i class="fas fa-handshake"></i> Current Customers
+                                        </label>
+                                    </div>
+                                </div>
+
+                                <div class="vr"></div>
+
+                                <div>
+                                    <button type="submit" class="btn btn-primary" id="importButton" disabled>
+                                        <i class="fas fa-download"></i> Import Selected Companies
+                                    </button>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -243,13 +264,21 @@
         updateImportButton();
     }
 
+    function selectValid() {
+        const checkboxes = document.querySelectorAll('.company-checkbox');
+        checkboxes.forEach(checkbox => {
+            checkbox.checked = checkbox.classList.contains('valid-company');
+        });
+        updateImportButton();
+    }
+
     function updateImportButton() {
         const selectedCount = document.querySelectorAll('.company-checkbox:checked').length;
         const importButton = document.getElementById('importButton');
         importButton.disabled = selectedCount === 0;
-        importButton.textContent = selectedCount > 0 
-            ? `Import ${selectedCount} Selected Companies`
-            : 'Import Selected Companies';
+        importButton.innerHTML = selectedCount > 0
+            ? `<i class="fas fa-download"></i> Import ${selectedCount} Selected Companies`
+            : '<i class="fas fa-download"></i> Import Selected Companies';
     }
 
     // Add event listeners to all checkboxes

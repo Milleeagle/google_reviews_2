@@ -40,20 +40,48 @@
                 </div>
             }
 
+            @if (TempData["EmailSuccess"] != null)
+            {
+                <div class="alert alert-success alert-dismissible fade show" role="alert">
+                    <i class="fas fa-envelope"></i> @TempData["EmailSuccess"]
+                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                </div>
+            }
+
+            @if (TempData["ApiErrors"] != null)
+            {
+                <div class="alert alert-warning alert-dismissible fade show" role="alert">
+                    <h6><i class="fas fa-exclamation-triangle"></i> API Errors Occurred</h6>
+                    <p>Some companies could not be processed due to Google Places API errors:</p>
+                    <div style="font-size: 0.9em;">
+                        @Html.Raw(TempData["ApiErrors"])
+                    </div>
+                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                </div>
+            }
+
+            @if (TempData["EmailWarning"] != null)
+            {
+                <div class="alert alert-warning alert-dismissible fade show" role="alert">
+                    <i class="fas fa-exclamation-triangle"></i> @TempData["EmailWarning"]
+                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                </div>
+            }
+
             <div class="card">
                 <div class="card-header">
                     <h5><i class="fas fa-chart-line"></i> Generate Review Report</h5>
                 </div>
                 <div class="card-body">
-                    <form asp-action="GenerateReviewReport" method="post" id="reviewReportForm">
+                    <form asp-action="StartReviewReport" method="post" id="reviewReportForm">
                         @Html.AntiForgeryToken()
                         
                         <div class="row">
                             <div class="col-md-4">
                                 <div class="mb-3">
                                     <label for="fromDate" class="form-label">From Date <span class="text-danger">*</span></label>
-                                    <input type="date" class="form-control" id="fromDate" name="fromDate" required 
-                                           value="@DateTime.Now.AddDays(-7).ToString("yyyy-MM-dd")">
+                                    <input type="date" class="form-control" id="fromDate" name="fromDate" required
+                                           value="2019-01-01">
                                     <div class="form-text">Start date for review search</div>
                                 </div>
                             </div>
@@ -80,11 +108,81 @@
                             </div>
                         </div>
 
+                        <div class="row mb-3">
+                            <div class="col-md-12">
+                                <div class="card bg-light">
+                                    <div class="card-body">
+                                        <h6 class="card-title">
+                                            <i class="fas fa-envelope"></i> Email Notification Settings
+                                        </h6>
+                                        <div class="row">
+                                            <div class="col-md-7">
+                                                <label for="notificationEmail" class="form-label">Email Address for Review Reports</label>
+                                                <input type="email" class="form-control" id="notificationEmail" name="notificationEmail"
+                                                       value="emil.jones@searchminds.se"
+                                                       placeholder="Enter email address to receive review reports">
+                                                <div class="form-text">
+                                                    If provided and email alert is enabled, you'll receive an email with the review report.
+                                                </div>
+                                            </div>
+                                            <div class="col-md-3 d-flex align-items-end">
+                                                <div class="form-check">
+                                                    <input class="form-check-input" type="checkbox" id="sendEmailAlert" name="sendEmailAlert" value="true" checked onchange="toggleEmailInput()">
+                                                    <label class="form-check-label" for="sendEmailAlert">
+                                                        <strong>Send email alert</strong>
+                                                    </label>
+                                                </div>
+                                            </div>
+                                            <div class="col-md-2 d-flex align-items-end">
+                                                <button type="button" class="btn btn-outline-secondary btn-sm w-100" onclick="sendTestEmail()">
+                                                    <i class="fas fa-paper-plane"></i> Test Email
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="row mb-3">
+                            <div class="col-md-12">
+                                <div class="card bg-light">
+                                    <div class="card-body">
+                                        <h6 class="card-title">
+                                            <i class="fas fa-building"></i> Company Selection
+                                        </h6>
+                                        <div class="row">
+                                            <div class="col-md-8">
+                                                <div class="form-check mb-2">
+                                                    <input class="form-check-input" type="radio" name="companySelection" id="allCompanies" value="all" checked onchange="toggleCompanySelection()">
+                                                    <label class="form-check-label" for="allCompanies">
+                                                        <strong>All Active Companies</strong>
+                                                    </label>
+                                                </div>
+                                                <div class="form-check">
+                                                    <input class="form-check-input" type="radio" name="companySelection" id="selectedCompanies" value="selected" onchange="toggleCompanySelection()">
+                                                    <label class="form-check-label" for="selectedCompanies">
+                                                        <strong>Selected Companies Only</strong>
+                                                    </label>
+                                                </div>
+                                            </div>
+                                            <div class="col-md-4 d-flex align-items-center">
+                                                <button type="button" class="btn btn-outline-primary btn-sm" id="selectCompaniesBtn" onclick="showCompanySelector()" disabled>
+                                                    <i class="fas fa-list-check"></i> Select Companies
+                                                </button>
+                                                <span id="selectedCount" class="badge bg-primary ms-2" style="display: none;">0 selected</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
                         <div class="row">
                             <div class="col-md-12">
                                 <div class="d-flex gap-2">
                                     <button type="submit" class="btn btn-warning" id="generateReportBtn">
-                                        <i class="fas fa-search"></i> Generate Report
+                                        <i class="fas fa-search"></i> Generate Report & Send Alert
                                     </button>
                                     <button type="button" class="btn btn-secondary" onclick="setQuickRange('today')">Today</button>
                                     <button type="button" class="btn btn-secondary" onclick="setQuickRange('week')">Last 7 Days</button>
@@ -92,6 +190,9 @@
                                 </div>
                             </div>
                         </div>
+
+                        <!-- Hidden inputs -->
+                        <input type="hidden" id="selectedCompanyIds" name="selectedCompanyIds" value="" />
                     </form>
                 </div>
             </div>
@@ -108,6 +209,144 @@
                             </div>
                         </div>
                     </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Company Selection Modal -->
+<div class="modal fade" id="companySelectionModal" tabindex="-1" aria-labelledby="companySelectionModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="companySelectionModalLabel">
+                    <i class="fas fa-building"></i> Select Companies for Report
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <div class="d-flex gap-2 mb-3">
+                        <button type="button" class="btn btn-outline-primary btn-sm" onclick="selectAllCompanies()">
+                            <i class="fas fa-check-double"></i> Select All
+                        </button>
+                        <button type="button" class="btn btn-outline-secondary btn-sm" onclick="deselectAllCompanies()">
+                            <i class="fas fa-times"></i> Clear All
+                        </button>
+                        <div class="ms-auto">
+                            <span id="modalSelectedCount" class="badge bg-info">0 selected</span>
+                        </div>
+                    </div>
+                    <div id="companiesCheckboxList">
+                        <div class="text-center">
+                            <div class="spinner-border text-primary" role="status">
+                                <span class="visually-hidden">Loading companies...</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" onclick="applyCompanySelection()">
+                    <i class="fas fa-check"></i> Apply Selection
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Progress Modal -->
+<div class="modal fade" id="progressModal" tabindex="-1" aria-hidden="true" data-bs-backdrop="static" data-bs-keyboard="false">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">
+                    <i class="fas fa-chart-line fa-spin"></i> Review Report Generation Progress
+                </h5>
+            </div>
+            <div class="modal-body">
+                <!-- Progress Bar -->
+                <div class="mb-4">
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <span class="fw-bold">Overall Progress</span>
+                        <span id="progressPercentage">0%</span>
+                    </div>
+                    <div class="progress" style="height: 20px;">
+                        <div id="progressBar" class="progress-bar progress-bar-striped progress-bar-animated"
+                             role="progressbar" style="width: 0%" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">
+                        </div>
+                    </div>
+                    <small class="text-muted">
+                        <span id="processedCount">0</span> of <span id="totalCount">0</span> companies analyzed
+                    </small>
+                </div>
+
+                <!-- Current Status -->
+                <div class="card mb-3">
+                    <div class="card-body">
+                        <h6 class="card-title">
+                            <i class="fas fa-info-circle"></i> Current Status
+                        </h6>
+                        <p class="card-text mb-2">
+                            <strong>Currently Processing:</strong> <span id="currentItem">Initializing...</span>
+                        </p>
+                        <div class="row">
+                            <div class="col-md-3">
+                                <small class="text-success">
+                                    <i class="fas fa-check-circle"></i> Analyzed: <span id="successCount">0</span>
+                                </small>
+                            </div>
+                            <div class="col-md-3">
+                                <small class="text-muted">
+                                    <i class="fas fa-times-circle"></i> Skipped: <span id="failedCount">0</span>
+                                </small>
+                            </div>
+                            <div class="col-md-3">
+                                <small class="text-info">
+                                    <i class="fas fa-clock"></i> ETA: <span id="estimatedTime">Calculating...</span>
+                                </small>
+                            </div>
+                            <div class="col-md-3">
+                                <small class="text-primary">
+                                    <i class="fas fa-tachometer-alt"></i> Rate: <span id="requestRate">0/min</span>
+                                </small>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Analysis Info -->
+                <div class="card mb-3">
+                    <div class="card-body">
+                        <h6 class="card-title">
+                            <i class="fas fa-search"></i> Analysis Progress
+                        </h6>
+                        <p class="card-text mb-0">
+                            <span id="rateLimitInfo">Analyzing companies for review issues...</span>
+                        </p>
+                    </div>
+                </div>
+
+                <!-- Recent Results -->
+                <div class="card">
+                    <div class="card-body">
+                        <h6 class="card-title">
+                            <i class="fas fa-list"></i> Recent Findings
+                        </h6>
+                        <ul id="recentResults" class="list-unstyled mb-0" style="max-height: 200px; overflow-y: auto;">
+                            <li class="text-muted">Analysis starting...</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" id="closeProgressModal" class="btn btn-secondary" style="display: none;">
+                    Close
+                </button>
+                <div id="processingIndicator" class="text-muted">
+                    <i class="fas fa-spinner fa-spin"></i> Generating review report...
                 </div>
             </div>
         </div>
@@ -202,13 +441,382 @@
         }
     }
 
-    // Form submission with loading state
-    document.getElementById('reviewReportForm').addEventListener('submit', function() {
-        const btn = document.getElementById('generateReportBtn');
-        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Generating Report...';
-        btn.disabled = true;
-    });
+
+    function toggleEmailInput() {
+        const sendEmailAlert = document.getElementById('sendEmailAlert').checked;
+        const notificationEmail = document.getElementById('notificationEmail');
+
+        // Set default email if empty
+        if (!notificationEmail.value) {
+            notificationEmail.value = 'aw@searchminds.se';
+        }
+
+        // Set required attribute based on email alert setting
+        notificationEmail.required = sendEmailAlert;
+
+        // Update button text
+        updateGenerateButtonText();
+
+        console.log('Checkbox toggled - sendEmailAlert:', sendEmailAlert);
+    }
+
+    function sendTestEmail() {
+        const email = document.getElementById('notificationEmail').value;
+        if (!email) {
+            alert('Please enter an email address first');
+            return;
+        }
+
+        // Create a form and submit it
+        const form = document.createElement('form');
+        form.method = 'POST';
+        form.action = '/Reviews/SendTestEmail';
+
+        // Add CSRF token
+        const token = document.querySelector('input[name="__RequestVerificationToken"]').value;
+        const tokenInput = document.createElement('input');
+        tokenInput.type = 'hidden';
+        tokenInput.name = '__RequestVerificationToken';
+        tokenInput.value = token;
+        form.appendChild(tokenInput);
+
+        // Add email parameter
+        const emailInput = document.createElement('input');
+        emailInput.type = 'hidden';
+        emailInput.name = 'testEmail';
+        emailInput.value = email;
+        form.appendChild(emailInput);
+
+        document.body.appendChild(form);
+        form.submit();
+    }
+
+    // Company selection management
+    let availableCompanies = [];
+    let selectedCompanyIdsArray = [];
+
+    function toggleCompanySelection() {
+        const isSelected = document.getElementById('selectedCompanies').checked;
+        const selectBtn = document.getElementById('selectCompaniesBtn');
+        const selectedCount = document.getElementById('selectedCount');
+
+        if (isSelected) {
+            selectBtn.disabled = false;
+            selectedCount.style.display = 'inline';
+        } else {
+            selectBtn.disabled = true;
+            selectedCount.style.display = 'none';
+            selectedCompanyIdsArray = [];
+            document.getElementById('selectedCompanyIds').value = '';
+            updateSelectedCount();
+        }
+
+        // Update button text based on both company selection and email alert settings
+        updateGenerateButtonText();
+    }
+
+    function updateGenerateButtonText() {
+        const isSelectedCompanies = document.getElementById('selectedCompanies').checked;
+        const sendEmailAlert = document.getElementById('sendEmailAlert').checked;
+        const generateBtn = document.getElementById('generateReportBtn');
+
+        if (isSelectedCompanies && sendEmailAlert) {
+            generateBtn.innerHTML = '<i class="fas fa-search"></i> Generate Report for Selected Companies & Send Alert';
+        } else if (isSelectedCompanies) {
+            generateBtn.innerHTML = '<i class="fas fa-search"></i> Generate Report for Selected Companies';
+        } else if (sendEmailAlert) {
+            generateBtn.innerHTML = '<i class="fas fa-search"></i> Generate Report & Send Alert';
+        } else {
+            generateBtn.innerHTML = '<i class="fas fa-search"></i> Generate Report';
+        }
+    }
+
+    function showCompanySelector() {
+        loadCompaniesForSelection();
+        const modal = new bootstrap.Modal(document.getElementById('companySelectionModal'));
+        modal.show();
+    }
+
+    async function loadCompaniesForSelection() {
+        try {
+            const response = await fetch('/api/companies');
+            if (!response.ok) {
+                throw new Error('Failed to load companies');
+            }
+            availableCompanies = await response.json();
+
+            const container = document.getElementById('companiesCheckboxList');
+
+            if (availableCompanies.length === 0) {
+                container.innerHTML = '<div class="alert alert-info">No companies available for selection.</div>';
+                return;
+            }
+
+            const companiesWithPlaceId = availableCompanies.filter(c => c.placeId);
+
+            let html = '';
+            companiesWithPlaceId.forEach(company => {
+                const isChecked = selectedCompanyIdsArray.includes(company.id) ? 'checked' : '';
+                html += `
+                    <div class="form-check mb-2">
+                        <input class="form-check-input company-checkbox" type="checkbox" id="company_${company.id}"
+                               value="${company.id}" ${isChecked} onchange="updateModalCount()">
+                        <label class="form-check-label" for="company_${company.id}">
+                            <strong>${company.name}</strong>
+                            ${company.placeId ? `<small class="text-muted d-block">Place ID: ${company.placeId.substring(0, 20)}...</small>` : ''}
+                        </label>
+                    </div>
+                `;
+            });
+
+            container.innerHTML = html;
+            updateModalCount();
+        } catch (error) {
+            console.error('Error loading companies:', error);
+            document.getElementById('companiesCheckboxList').innerHTML = '<div class="alert alert-danger">Error loading companies</div>';
+        }
+    }
+
+    function selectAllCompanies() {
+        const checkboxes = document.querySelectorAll('.company-checkbox');
+        checkboxes.forEach(cb => cb.checked = true);
+        updateModalCount();
+    }
+
+    function deselectAllCompanies() {
+        const checkboxes = document.querySelectorAll('.company-checkbox');
+        checkboxes.forEach(cb => cb.checked = false);
+        updateModalCount();
+    }
+
+    function updateModalCount() {
+        const checkedBoxes = document.querySelectorAll('.company-checkbox:checked');
+        document.getElementById('modalSelectedCount').textContent = `${checkedBoxes.length} selected`;
+    }
+
+    function applyCompanySelection() {
+        const checkedBoxes = document.querySelectorAll('.company-checkbox:checked');
+        selectedCompanyIdsArray = Array.from(checkedBoxes).map(cb => cb.value);
+
+        // Update hidden input
+        document.getElementById('selectedCompanyIds').value = selectedCompanyIdsArray.join(',');
+
+        updateSelectedCount();
+
+        // Close modal
+        const modal = bootstrap.Modal.getInstance(document.getElementById('companySelectionModal'));
+        modal.hide();
+    }
+
+    function updateSelectedCount() {
+        const count = selectedCompanyIdsArray.length;
+        const badge = document.getElementById('selectedCount');
+        badge.textContent = `${count} selected`;
+
+        // Debug logging
+        console.log(`updateSelectedCount: count=${count}, selectedCompanies mode=${document.getElementById('selectedCompanies').checked}`);
+        console.log('Selected IDs:', selectedCompanyIdsArray);
+        console.log('Hidden input value:', document.getElementById('selectedCompanyIds').value);
+
+        // Only auto-switch if user explicitly has no companies selected AND is in selected mode
+        // Don't auto-switch during initial load or temporary state changes
+        if (count === 0 && document.getElementById('selectedCompanies').checked && selectedCompanyIdsArray.length === 0) {
+            console.log('Auto-switching to all companies mode due to no selection');
+            document.getElementById('allCompanies').checked = true;
+            toggleCompanySelection();
+        }
+    }
 
     // Load companies on page load
     loadCompaniesSummary();
+
+    // Initialize email settings and button text
+    toggleEmailInput();
+    updateGenerateButtonText();
+
+    // Progress tracking using polling
+    let pollingInterval;
+    let currentSessionId = null;
+
+    function startProgressPolling(sessionId) {
+        currentSessionId = sessionId;
+        console.log("Starting progress polling for review report session:", sessionId);
+
+        // Poll every 500ms for updates
+        pollingInterval = setInterval(() => {
+            fetch(`/api/batchprogress/${sessionId}`)
+                .then(response => {
+                    if (response.ok) {
+                        return response.json();
+                    }
+                    throw new Error('Progress not found');
+                })
+                .then(progress => {
+                    updateProgressUI(progress);
+                    if (progress.isComplete) {
+                        stopProgressPolling();
+                    }
+                })
+                .catch(error => {
+                    console.log("Progress polling stopped:", error.message);
+                    stopProgressPolling();
+                });
+        }, 500);
+    }
+
+    function stopProgressPolling() {
+        if (pollingInterval) {
+            clearInterval(pollingInterval);
+            pollingInterval = null;
+        }
+    }
+
+    function updateProgressUI(progress) {
+        const percentage = progress.totalItems > 0 ? Math.round((progress.processedItems / progress.totalItems) * 100) : 0;
+
+        // Update progress bar
+        document.getElementById('progressBar').style.width = percentage + '%';
+        document.getElementById('progressBar').setAttribute('aria-valuenow', percentage);
+        document.getElementById('progressPercentage').textContent = percentage + '%';
+
+        // Update counts
+        document.getElementById('processedCount').textContent = progress.processedItems;
+        document.getElementById('totalCount').textContent = progress.totalItems;
+        document.getElementById('successCount').textContent = progress.successfulItems;
+        document.getElementById('failedCount').textContent = progress.failedItems;
+        document.getElementById('currentItem').textContent = progress.currentItem;
+
+        // Update rate and time estimates
+        document.getElementById('requestRate').textContent = Math.round(progress.requestsPerMinute) + '/min';
+        document.getElementById('rateLimitInfo').textContent = progress.rateLimitInfo;
+
+        if (progress.estimatedRemainingSeconds > 0) {
+            const minutes = Math.floor(progress.estimatedRemainingSeconds / 60);
+            const seconds = progress.estimatedRemainingSeconds % 60;
+            document.getElementById('estimatedTime').textContent = `${minutes}m ${seconds}s`;
+        } else {
+            document.getElementById('estimatedTime').textContent = progress.isComplete ? 'Completed!' : 'Calculating...';
+        }
+
+        // Update recent results
+        if (progress.recentResults && progress.recentResults.length > 0) {
+            const resultsList = document.getElementById('recentResults');
+            resultsList.innerHTML = '';
+            progress.recentResults.forEach(result => {
+                const li = document.createElement('li');
+                li.className = result.includes('✓') ? 'text-success' : 'text-info';
+                li.innerHTML = `<small>${result}</small>`;
+                resultsList.appendChild(li);
+            });
+        }
+
+        // Handle completion
+        if (progress.isComplete) {
+            document.getElementById('processingIndicator').style.display = 'none';
+            document.getElementById('closeProgressModal').style.display = 'block';
+
+            // Update progress bar color
+            document.getElementById('progressBar').classList.remove('progress-bar-animated');
+            document.getElementById('progressBar').classList.add('bg-success');
+
+            // Auto-close modal and redirect to report
+            setTimeout(() => {
+                const modal = bootstrap.Modal.getInstance(document.getElementById('progressModal'));
+                if (modal) {
+                    modal.hide();
+                }
+
+                // Redirect to report if URL is provided, otherwise reload
+                if (progress.redirectUrl) {
+                    window.location.href = progress.redirectUrl;
+                } else {
+                    location.reload();
+                }
+            }, 2000);
+        }
+    }
+
+    // Form submission with AJAX for progress tracking
+    document.getElementById('reviewReportForm').addEventListener('submit', function(e) {
+        e.preventDefault(); // Always prevent default form submission
+
+        // Show progress modal
+        const progressModal = new bootstrap.Modal(document.getElementById('progressModal'));
+        progressModal.show();
+
+        // Reset progress UI
+        document.getElementById('progressBar').style.width = '0%';
+        document.getElementById('progressBar').classList.add('progress-bar-animated');
+        document.getElementById('progressBar').classList.remove('bg-success');
+        document.getElementById('processingIndicator').style.display = 'block';
+        document.getElementById('closeProgressModal').style.display = 'none';
+
+        // Submit form via AJAX to get session ID
+        const formData = new FormData(this);
+
+        fetch(this.action, {
+            method: 'POST',
+            body: formData
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                startProgressPolling(data.sessionId);
+            } else {
+                alert('Error: ' + (data.error || 'Failed to start report generation'));
+                const modal = bootstrap.Modal.getInstance(document.getElementById('progressModal'));
+                if (modal) modal.hide();
+            }
+        })
+        .catch(error => {
+            console.error('Error starting report generation:', error);
+            alert('Error starting report generation. Please try again.');
+            const modal = bootstrap.Modal.getInstance(document.getElementById('progressModal'));
+            if (modal) modal.hide();
+        });
+    });
+
+    // Close progress modal handler
+    document.getElementById('closeProgressModal')?.addEventListener('click', function() {
+        const modal = bootstrap.Modal.getInstance(document.getElementById('progressModal'));
+        if (modal) {
+            modal.hide();
+        }
+
+        // Get the latest progress to check for redirect URL
+        if (currentSessionId) {
+            fetch(`/api/batchprogress/${currentSessionId}`)
+                .then(response => response.json())
+                .then(progress => {
+                    if (progress.redirectUrl) {
+                        window.location.href = progress.redirectUrl;
+                    } else {
+                        location.reload();
+                    }
+                })
+                .catch(() => location.reload());
+        } else {
+            location.reload();
+        }
+    });
+
+    // Debug form submission (keeping for backward compatibility)
+    function debugFormSubmission(event) {
+        const form = event.target;
+        const formData = new FormData(form);
+
+        console.log('=== FORM SUBMISSION DEBUG ===');
+        console.log('Company selection mode:', document.querySelector('input[name="companySelection"]:checked')?.value);
+        console.log('Selected company IDs array:', selectedCompanyIdsArray);
+        console.log('Hidden input selectedCompanyIds:', document.getElementById('selectedCompanyIds').value);
+
+        console.log('All form data:');
+        for (let [key, value] of formData.entries()) {
+            console.log(`  ${key}: ${value}`);
+        }
+        console.log('=== END DEBUG ===');
+
+        // Don't prevent submission, just log for debugging
+        return true;
+    }
 </script>

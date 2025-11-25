@@ -106,6 +106,61 @@ namespace google_reviews.Services
             }
         }
 
+        public async Task<bool> SendBatchReviewNotificationAsync(string recipientEmail, List<CompanyReviewData> reviewData, List<string> results, int successCount, int failCount)
+        {
+            try
+            {
+                var emailConfig = _configuration.GetSection("Email");
+                var smtpHost = emailConfig["SmtpHost"];
+                var smtpPort = int.Parse(emailConfig["SmtpPort"] ?? "587");
+                var smtpUsername = emailConfig["SmtpUsername"];
+                var smtpPassword = emailConfig["SmtpPassword"];
+                var fromEmail = emailConfig["FromEmail"] ?? smtpUsername;
+                var fromName = emailConfig["FromName"] ?? "Google Reviews System";
+
+                if (string.IsNullOrEmpty(smtpHost) || string.IsNullOrEmpty(smtpUsername) || string.IsNullOrEmpty(smtpPassword))
+                {
+                    _logger.LogError("Email configuration is missing required settings");
+                    return false;
+                }
+
+                // Find companies with negative reviews (rating <= 3)
+                var companiesWithNegativeReviews = reviewData
+                    .Where(rd => rd.Reviews.Any(r => r.Rating <= 3))
+                    .ToList();
+
+                var hasNegativeReviews = companiesWithNegativeReviews.Any();
+
+                var subject = hasNegativeReviews
+                    ? $"⚠️ Batch Review Alert: {companiesWithNegativeReviews.Count} companies have negative reviews"
+                    : $"✅ Batch Review Complete: {successCount} companies processed successfully";
+
+                var htmlBody = GenerateBatchReviewEmailHtml(reviewData, results, successCount, failCount, companiesWithNegativeReviews);
+
+                using var client = new SmtpClient(smtpHost, smtpPort);
+                client.EnableSsl = true;
+                client.UseDefaultCredentials = false;
+                client.Credentials = new NetworkCredential(smtpUsername, smtpPassword);
+
+                var message = new MailMessage();
+                message.From = new MailAddress(fromEmail, fromName);
+                message.To.Add(recipientEmail);
+                message.Subject = subject;
+                message.Body = htmlBody;
+                message.IsBodyHtml = true;
+                message.BodyEncoding = Encoding.UTF8;
+
+                await client.SendMailAsync(message);
+                _logger.LogInformation($"Batch review notification email sent successfully to {recipientEmail}");
+                return true;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, $"Failed to send batch review notification email to {recipientEmail}");
+                return false;
+            }
+        }
+
         public Task<bool> IsConfiguredAsync()
         {
             var emailConfig = _configuration.GetSection("Email");
@@ -113,10 +168,10 @@ namespace google_reviews.Services
             var smtpUsername = emailConfig["SmtpUsername"];
             var smtpPassword = emailConfig["SmtpPassword"];
 
-            var isConfigured = !string.IsNullOrEmpty(smtpHost) && 
-                              !string.IsNullOrEmpty(smtpUsername) && 
+            var isConfigured = !string.IsNullOrEmpty(smtpHost) &&
+                              !string.IsNullOrEmpty(smtpUsername) &&
                               !string.IsNullOrEmpty(smtpPassword);
-            
+
             return Task.FromResult(isConfigured);
         }
 
@@ -218,8 +273,9 @@ namespace google_reviews.Services
             else
             {
                 html += "<h2 style='color: #dc3545; margin-bottom: 25px;'>⚠️ Companies Requiring Attention</h2>";
-                
-                foreach (var company in report.CompanyReports.Take(10)) // Limit to top 10 for email
+
+                // Show all companies with issues (not limited to 10)
+                foreach (var company in report.CompanyReports)
                 {
                     html += $@"
             <div class='company-issue'>
@@ -235,7 +291,9 @@ namespace google_reviews.Services
                     </div>
                 </div>";
 
-                    foreach (var review in company.BadReviews.Take(3)) // Show top 3 worst reviews
+                    // For large reports, limit reviews per company to avoid email size limits
+                    var reviewsToShow = report.CompanyReports.Count > 20 ? 1 : 3;
+                    foreach (var review in company.BadReviews.Take(reviewsToShow))
                     {
                         var timeAgo = DateTime.UtcNow - review.Time;
                         var timeAgoText = timeAgo.Days > 0 ? $"{timeAgo.Days} days ago" : 
@@ -256,9 +314,10 @@ namespace google_reviews.Services
                     html += "</div>";
                 }
 
-                if (report.CompanyReports.Count > 10)
+                // Add pagination notice for very large reports to avoid email size limits
+                if (report.CompanyReports.Count > 50)
                 {
-                    html += $"<p style='text-align: center; color: #666; margin-top: 20px;'><em>... and {report.CompanyReports.Count - 10} more companies with issues</em></p>";
+                    html += $"<p style='text-align: center; color: #666; margin-top: 20px;'><em>📧 Large report: Showing all {report.CompanyReports.Count} companies with issues</em></p>";
                 }
             }
 
@@ -309,6 +368,215 @@ namespace google_reviews.Services
     </div>
 </body>
 </html>";
+        }
+
+        private string GenerateBatchReviewEmailHtml(List<CompanyReviewData> reviewData, List<string> results, int successCount, int failCount, List<CompanyReviewData> companiesWithNegativeReviews)
+        {
+            var hasNegativeReviews = companiesWithNegativeReviews.Any();
+            var statusColor = hasNegativeReviews ? "#dc3545" : "#28a745";
+            var statusIcon = hasNegativeReviews ? "⚠️" : "✅";
+
+            var html = $@"
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset='UTF-8'>
+    <meta name='viewport' content='width=device-width, initial-scale=1.0'>
+    <title>Batch Review Report</title>
+    <style>
+        body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; margin: 0; padding: 20px; background-color: #f8f9fa; }}
+        .container {{ max-width: 800px; margin: 0 auto; background: white; border-radius: 8px; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }}
+        .header {{ background: linear-gradient(135deg, {statusColor}, {statusColor}dd); color: white; padding: 30px; text-align: center; }}
+        .header h1 {{ margin: 0; font-size: 28px; font-weight: 600; }}
+        .summary {{ padding: 30px; background: #f8f9fa; border-bottom: 1px solid #dee2e6; }}
+        .summary-stats {{ display: flex; justify-content: space-around; text-align: center; margin-top: 20px; }}
+        .stat {{ padding: 15px; }}
+        .stat-number {{ font-size: 32px; font-weight: bold; color: {statusColor}; }}
+        .stat-label {{ color: #6c757d; font-size: 14px; margin-top: 5px; }}
+        .content {{ padding: 30px; }}
+        .alert {{ padding: 15px; border-radius: 5px; margin: 15px 0; }}
+        .alert-warning {{ background-color: #fff3cd; border: 1px solid #ffeaa7; color: #856404; }}
+        .company-list {{ margin: 20px 0; }}
+        .company-item {{ padding: 15px; border: 1px solid #dee2e6; border-radius: 5px; margin-bottom: 10px; }}
+        .company-name {{ font-weight: bold; color: #495057; }}
+        .negative-review {{ background-color: #f8d7da; border-color: #f5c6cb; margin-top: 10px; padding: 10px; border-radius: 3px; }}
+        .review-text {{ font-style: italic; margin-top: 5px; color: #721c24; }}
+        .results-section {{ background: #f8f9fa; padding: 20px; border-radius: 5px; margin-top: 20px; }}
+        .footer {{ background: #6c757d; color: white; text-align: center; padding: 20px; font-size: 14px; }}
+        .rating-stars {{ color: #ffc107; }}
+    </style>
+</head>
+<body>
+    <div class='container'>
+        <div class='header'>
+            <h1>{statusIcon} Batch Review Processing Complete</h1>
+        </div>
+
+        <div class='summary'>
+            <h2>Processing Summary</h2>
+            <div class='summary-stats'>
+                <div class='stat'>
+                    <div class='stat-number' style='color: #28a745;'>{successCount}</div>
+                    <div class='stat-label'>Successfully Processed</div>
+                </div>
+                <div class='stat'>
+                    <div class='stat-number' style='color: #dc3545;'>{failCount}</div>
+                    <div class='stat-label'>Failed</div>
+                </div>
+                <div class='stat'>
+                    <div class='stat-number' style='color: #ffc107;'>{companiesWithNegativeReviews.Count}</div>
+                    <div class='stat-label'>Companies with Negative Reviews</div>
+                </div>
+            </div>
+        </div>
+
+        <div class='content'>";
+
+            if (hasNegativeReviews)
+            {
+                html += $@"
+            <div class='alert alert-warning'>
+                <strong>⚠️ Attention Required!</strong> {companiesWithNegativeReviews.Count} companies have received negative reviews (3 stars or below).
+            </div>
+
+            <h3>Companies with Negative Reviews</h3>
+            <div class='company-list'>";
+
+                foreach (var company in companiesWithNegativeReviews)
+                {
+                    var negativeReviews = company.Reviews.Where(r => r.Rating <= 3).OrderByDescending(r => r.Time).Take(3);
+                    html += $@"
+                <div class='company-item'>
+                    <div class='company-name'>{company.CompanyName}</div>
+                    <div style='margin-top: 5px; color: #6c757d;'>Average Rating: {company.AverageRating:F1} ⭐ ({company.TotalReviews} total reviews)</div>";
+
+                    foreach (var review in negativeReviews)
+                    {
+                        var stars = string.Join("", Enumerable.Repeat("⭐", review.Rating)) + string.Join("", Enumerable.Repeat("☆", 5 - review.Rating));
+                        html += $@"
+                    <div class='negative-review'>
+                        <strong>{review.AuthorName}</strong> - {stars} ({review.Rating}/5)
+                        <div style='color: #6c757d; font-size: 12px;'>{review.Time:MMM dd, yyyy}</div>
+                        <div class='review-text'>""{(review.Text?.Length > 200 ? review.Text.Substring(0, 200) + "..." : review.Text)}""</div>
+                    </div>";
+                    }
+
+                    html += "</div>";
+                }
+
+                html += "</div>";
+            }
+            else
+            {
+                html += $@"
+            <div class='alert' style='background-color: #d4edda; border-color: #c3e6cb; color: #155724;'>
+                <strong>✅ Great news!</strong> No negative reviews were found in the processed companies.
+            </div>";
+            }
+
+            html += $@"
+            <div class='results-section'>
+                <h3>Detailed Processing Results</h3>
+                <ul>";
+
+            foreach (var result in results.Take(20)) // Limit to first 20 results
+            {
+                html += $"<li>{result}</li>";
+            }
+
+            if (results.Count > 20)
+            {
+                html += $"<li><em>... and {results.Count - 20} more companies</em></li>";
+            }
+
+            html += $@"
+                </ul>
+            </div>
+        </div>
+
+        <div class='footer'>
+            <p>Google Reviews Batch Processing System</p>
+            <p>Generated on {DateTime.UtcNow:MMM dd, yyyy} at {DateTime.UtcNow:HH:mm} UTC</p>
+        </div>
+    </div>
+</body>
+</html>";
+
+            return html;
+        }
+
+        public async Task<bool> SendReviewReportEmailWithExcelAsync(string recipientEmail, ReviewMonitorReport report, string monitorName, byte[] excelData, string excelFileName)
+        {
+            try
+            {
+                var emailConfig = _configuration.GetSection("Email");
+                var smtpHost = emailConfig["SmtpHost"];
+                var smtpPort = int.Parse(emailConfig["SmtpPort"] ?? "587");
+                var smtpUsername = emailConfig["SmtpUsername"];
+                var smtpPassword = emailConfig["SmtpPassword"];
+                var fromEmail = emailConfig["FromEmail"] ?? smtpUsername;
+                var fromName = emailConfig["FromName"] ?? "Review Monitor";
+
+                if (string.IsNullOrEmpty(smtpHost) || string.IsNullOrEmpty(smtpUsername) || string.IsNullOrEmpty(smtpPassword))
+                {
+                    _logger.LogError("Email configuration is missing required settings");
+                    return false;
+                }
+
+                var subject = report.CompaniesWithIssues > 0
+                    ? $"⚠️ Review Alert: {report.CompaniesWithIssues} companies need attention - {monitorName}"
+                    : $"✅ All Clear: No review issues found - {monitorName}";
+
+                var htmlBody = GenerateReportEmailHtml(report, monitorName);
+
+                // Add a note about the Excel attachment
+                htmlBody = htmlBody.Replace("</div>\n    </div>\n\n    <div class='footer'>",
+                    @"</div>
+    </div>
+
+    <div style='background: #e3f2fd; padding: 20px; margin: 20px 30px; border-radius: 8px; border-left: 4px solid #2196f3;'>
+        <h3 style='margin: 0 0 10px 0; color: #1976d2;'>📊 Excel Report Attached</h3>
+        <p style='margin: 0; color: #333;'>A detailed Excel spreadsheet with all review data (företagnamn, mailadress, rating, review, review link) is attached to this email for your analysis.</p>
+    </div>
+
+    <div class='footer'>");
+
+                using var client = new SmtpClient(smtpHost, smtpPort);
+                client.EnableSsl = true;
+                client.UseDefaultCredentials = false;
+                client.Credentials = new NetworkCredential(smtpUsername, smtpPassword);
+
+                var message = new MailMessage();
+                message.From = new MailAddress(fromEmail, fromName);
+                message.To.Add(recipientEmail);
+                message.Subject = subject;
+                message.Body = htmlBody;
+                message.IsBodyHtml = true;
+                message.BodyEncoding = Encoding.UTF8;
+
+                // Add Excel attachment
+                if (excelData?.Length > 0)
+                {
+                    var memoryStream = new MemoryStream(excelData);
+                    var attachment = new Attachment(memoryStream, excelFileName, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+                    message.Attachments.Add(attachment);
+                    _logger.LogInformation($"Added Excel attachment: {excelFileName} ({excelData.Length} bytes)");
+                }
+                else
+                {
+                    _logger.LogWarning("No Excel data to attach - excelData is null or empty");
+                }
+
+                await client.SendMailAsync(message);
+
+                _logger.LogInformation($"Review report email with Excel attachment sent successfully to {recipientEmail}");
+                return true;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, $"Failed to send review report email with Excel attachment to {recipientEmail}");
+                return false;
+            }
         }
     }
 }

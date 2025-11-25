@@ -15,10 +15,17 @@ namespace google_reviews.Models
         
         [Display(Name = "Google Maps URL")]
         public string? GoogleMapsUrl { get; set; }
-        
+
+        [Display(Name = "Email Address")]
+        [EmailAddress]
+        public string? EmailAddress { get; set; }
+
         [Display(Name = "Active")]
         public bool IsActive { get; set; } = true;
-        
+
+        [Display(Name = "Current Customer")]
+        public bool IsCurrentCustomer { get; set; } = false;
+
         [Display(Name = "Last Updated")]
         public DateTime LastUpdated { get; set; } = DateTime.UtcNow;
         

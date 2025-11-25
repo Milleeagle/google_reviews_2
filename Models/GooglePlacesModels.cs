@@ -104,10 +104,37 @@ namespace google_reviews.Models
         public string? Address { get; set; }
         public string? Phone { get; set; }
         public string? Website { get; set; }
+        public string? EmailAddress { get; set; }
         public string? Category { get; set; }
         public Dictionary<string, string> AdditionalData { get; set; } = new();
         public bool AlreadyExists { get; set; }
         public string? ExistingCompanyId { get; set; }
+    }
+
+    // Google Places Search API models
+    public class GooglePlacesSearchResponse
+    {
+        public List<GooglePlaceSearchResult> Places { get; set; } = new();
+    }
+
+    public class GooglePlaceSearchResult
+    {
+        public string? Id { get; set; }
+        public GooglePlaceDisplayName? DisplayName { get; set; }
+        public string? FormattedAddress { get; set; }
+        public GooglePlaceLocation? Location { get; set; }
+    }
+
+    public class GooglePlaceDisplayName
+    {
+        public string? Text { get; set; }
+        public string? LanguageCode { get; set; }
+    }
+
+    public class GooglePlaceLocation
+    {
+        public double Latitude { get; set; }
+        public double Longitude { get; set; }
     }
 
     // Review monitoring models

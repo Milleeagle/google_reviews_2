@@ -39,6 +39,22 @@
                         <span asp-validation-for="GoogleMapsUrl" class="text-danger"></span>
                     </div>
 
+                    <div class="mb-3">
+                        <label class="form-label">Customer Status</label>
+                        <div class="btn-group w-100" role="group" aria-label="Customer Status">
+                            <input type="radio" class="btn-check" name="IsCurrentCustomer" id="potentialCustomer" value="false" checked>
+                            <label class="btn btn-outline-info" for="potentialCustomer">
+                                <i class="fas fa-search"></i> Potential Customer
+                            </label>
+
+                            <input type="radio" class="btn-check" name="IsCurrentCustomer" id="currentCustomer" value="true">
+                            <label class="btn btn-outline-success" for="currentCustomer">
+                                <i class="fas fa-handshake"></i> Current Customer
+                            </label>
+                        </div>
+                        <div class="form-text">Choose whether this company is a current customer or a potential customer</div>
+                    </div>
+
                     <div class="mb-3 form-check">
                         <input asp-for="IsActive" class="form-check-input" checked />
                         <label asp-for="IsActive" class="form-check-label"></label>
