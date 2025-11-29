@@ -1,9 +1,9 @@
+using google_reviews.Services;
 using google_reviews.Models;
 using OpenQA.Selenium;
 using OpenQA.Selenium.Chrome;
 using OpenQA.Selenium.Support.UI;
 using System.Text.RegularExpressions;
-using System.Diagnostics;
 
 namespace google_reviews.Services;
 
@@ -12,8 +12,6 @@ public class GoogleReviewScraper : IReviewScraper, IDisposable
     private readonly IWebDriver _driver;
     private readonly WebDriverWait _wait;
     private readonly ILogger<GoogleReviewScraper> _logger;
-    private readonly ChromeDriverService _service;
-    private readonly int _serviceProcessId;
     private bool _disposed = false;
 
     public GoogleReviewScraper(ILogger<GoogleReviewScraper> logger)
@@ -22,30 +20,32 @@ public class GoogleReviewScraper : IReviewScraper, IDisposable
 
         var options = new ChromeOptions();
         options.AddArguments(
-            "--headless",
+            "--headless=new",
             "--no-sandbox",
             "--disable-dev-shm-usage",
             "--disable-gpu",
             "--window-size=1920,1080",
             "--disable-blink-features=AutomationControlled",
             "--lang=en-US",
+            // Enhanced stealth
             "--disable-extensions",
             "--disable-plugins",
-            "--force-device-scale-factor=1"
+            "--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "--disable-infobars",
+            "--disable-notifications",
+            "--disable-popup-blocking"
         );
 
-        // Create ChromeDriverService to have more control over the process
-        _service = ChromeDriverService.CreateDefaultService();
-        _service.HideCommandPromptWindow = true;
-        _service.SuppressInitialDiagnosticInformation = true;
+        // Add experimental options for better stealth
+        options.AddExcludedArgument("enable-automation");
+        options.AddAdditionalOption("useAutomationExtension", false);
 
-        _driver = new ChromeDriver(_service, options);
-        _serviceProcessId = _service.ProcessId;
+        _driver = new ChromeDriver(options);
+        _driver.Manage().Timeouts().PageLoad = TimeSpan.FromSeconds(20);
+        _wait = new WebDriverWait(_driver, TimeSpan.FromSeconds(15));
 
-        _driver.Manage().Timeouts().PageLoad = TimeSpan.FromSeconds(15);
-        _wait = new WebDriverWait(_driver, TimeSpan.FromSeconds(10));
-
-        _logger.LogDebug("Created ChromeDriver with service PID: {ProcessId}", _serviceProcessId);
+        // Execute script to remove webdriver flag
+        ((IJavaScriptExecutor)_driver).ExecuteScript("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})");
     }
 
     public async Task<List<Review>> ScrapeReviewsAsync(string googleMapsUrl, ScrapingOptions? options = null)
@@ -58,7 +58,7 @@ public class GoogleReviewScraper : IReviewScraper, IDisposable
             _logger.LogInformation("Navigating to: {Url}", googleMapsUrl);
             _driver.Navigate().GoToUrl(googleMapsUrl);
 
-            // Wait for page load
+            // Wait for page body to be present
             try
             {
                 _wait.Until(d => d.FindElement(By.TagName("body")));
@@ -66,43 +66,47 @@ public class GoogleReviewScraper : IReviewScraper, IDisposable
             catch { }
             await Task.Delay(1500);
 
-            // Handle consent dialog
-            await HandleConsentDialog();
+            // Handle consent if it appears
+            await HandleConsent();
+
+            // Wait for place details to load
+            await Task.Delay(2000);
 
             // Click Reviews tab
             await ClickReviewsTab();
-            await Task.Delay(2500); // Increased wait time for reviews to load
+            await Task.Delay(1500);
 
-            // Scroll to load all reviews (up to 100)
-            await ScrollReviews(100);
+            // Scroll to load reviews
+            await ScrollReviews(options.MaxReviews);
 
             // Extract reviews
             reviews = ExtractAllReviews(options.MaxReviews);
 
-            _logger.LogInformation("Scraped {Count} reviews from {Url}", reviews.Count, googleMapsUrl);
+            _logger.LogInformation("Extracted {Count} reviews", reviews.Count);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error scraping reviews from {Url}", googleMapsUrl);
+            _logger.LogError(ex, "Error scraping reviews");
         }
 
         return reviews;
     }
 
-    private async Task HandleConsentDialog()
+    private async Task HandleConsent()
     {
         try
         {
+            // Try multiple consent button selectors
             var consentSelectors = new[]
             {
                 "//button[contains(., 'Accept')]",
                 "//button[contains(., 'Reject')]",
-                "//button[contains(., 'Godkänn')]",
-                "//button[contains(., 'Avvisa')]",
+                "//button[contains(., 'Godkänn')]", // Swedish Accept
+                "//button[contains(., 'Avvisa')]", // Swedish Reject
                 "//button[@aria-label='Accept all']",
                 "//button[@aria-label='Reject all']",
-                "//form[@action]//button[2]",
-                "//button[contains(@class, 'VfPpkd-LgbsSe')]"
+                "//form[@action]//button[2]", // Usually the second button in consent forms
+                "//button[contains(@class, 'VfPpkd-LgbsSe')]" // Material button class
             };
 
             foreach (var selector in consentSelectors)
@@ -114,7 +118,7 @@ public class GoogleReviewScraper : IReviewScraper, IDisposable
                     {
                         button.Click();
                         await Task.Delay(1000);
-                        _logger.LogInformation("Clicked consent button");
+                        _logger.LogInformation("Clicked consent button with selector: {Selector}", selector);
                         break;
                     }
                 }
@@ -127,30 +131,81 @@ public class GoogleReviewScraper : IReviewScraper, IDisposable
         }
     }
 
+    private string ConvertPlaceIdToUrl(string input)
+    {
+        // If it's already a URL, return as-is
+        if (input.StartsWith("http://") || input.StartsWith("https://"))
+        {
+            return input;
+        }
+
+        // If it looks like a Place ID, convert to Google Maps URL
+        // Place IDs typically start with ChIJ or other prefixes and don't contain slashes
+        if (!input.Contains("/") && !input.Contains("?"))
+        {
+            _logger.LogInformation("Converting Place ID '{PlaceId}' to Google Maps URL", input);
+            // Use the direct place URL format which works better for scraping
+            return $"https://www.google.com/maps/place/?q=place_id:{input}";
+        }
+
+        // Otherwise assume it's already a URL without protocol
+        return input.StartsWith("www.") ? $"https://{input}" : input;
+    }
+
     private async Task ClickReviewsTab()
     {
         try
         {
+            // Try to find and click Reviews tab using multiple strategies
             var selectors = new[]
             {
-                "button[aria-label*='Review']",
-                "button[role='tab'][aria-label*='Review']",
-                "button[data-tab-index='1']"
+                "button[aria-label*='eview']", // Works for "Reviews" in English
+                "button[aria-label*='ecension']", // Swedish "Recensioner"
+                "button[role='tab'][aria-label*='eview']",
+                "button[data-tab-index='1']",
+                "//button[contains(@aria-label, 'review')]",
+                "//button[contains(@aria-label, 'Review')]",
+                "button.hh2c6"
             };
 
+            bool foundTab = false;
             foreach (var selector in selectors)
             {
                 try
                 {
-                    var tab = _driver.FindElement(By.CssSelector(selector));
-                    if (tab.Displayed)
+                    IWebElement? tab = null;
+
+                    if (selector.StartsWith("//"))
                     {
+                        tab = _driver.FindElement(By.XPath(selector));
+                    }
+                    else
+                    {
+                        tab = _driver.FindElement(By.CssSelector(selector));
+                    }
+
+                    if (tab != null && tab.Displayed)
+                    {
+                        // Scroll element into view first
+                        ((IJavaScriptExecutor)_driver).ExecuteScript("arguments[0].scrollIntoView(true);", tab);
+                        await Task.Delay(500);
+
                         tab.Click();
-                        _logger.LogInformation("Clicked Reviews tab");
+                        _logger.LogInformation("Clicked Reviews tab with selector: {Selector}", selector);
+                        foundTab = true;
+                        await Task.Delay(2000);
+
+                        // Sorting can cause issues, skip for now
+                        // await SortReviewsByNewest();
                         return;
                     }
                 }
                 catch { }
+            }
+
+            if (!foundTab)
+            {
+                _logger.LogWarning("Could not find Reviews tab with any selector");
             }
         }
         catch (Exception ex)
@@ -159,19 +214,112 @@ public class GoogleReviewScraper : IReviewScraper, IDisposable
         }
     }
 
+    private async Task SortReviewsByNewest()
+    {
+        try
+        {
+            // Click the sort button
+            var sortSelectors = new[]
+            {
+                "button[aria-label*='Sort']",
+                "button[aria-label*='Sortera']", // Swedish
+                "button.g88MCb"
+            };
+
+            IWebElement? sortButton = null;
+            foreach (var selector in sortSelectors)
+            {
+                try
+                {
+                    sortButton = _driver.FindElement(By.CssSelector(selector));
+                    if (sortButton != null && sortButton.Displayed)
+                    {
+                        sortButton.Click();
+                        _logger.LogInformation("Clicked sort button");
+                        await Task.Delay(1000);
+                        break;
+                    }
+                }
+                catch { }
+            }
+
+            if (sortButton != null)
+            {
+                // Click "Newest" option
+                var newestSelectors = new[]
+                {
+                    "//div[@role='menuitem']//div[contains(text(), 'Newest')]",
+                    "//div[@role='menuitem']//div[contains(text(), 'Nyaste')]", // Swedish
+                    "//div[@role='menuitemradio' and contains(., 'Newest')]",
+                    "//div[@data-index='1']" // Usually the second option
+                };
+
+                foreach (var selector in newestSelectors)
+                {
+                    try
+                    {
+                        var newestOption = _driver.FindElement(By.XPath(selector));
+                        if (newestOption != null && newestOption.Displayed)
+                        {
+                            newestOption.Click();
+                            _logger.LogInformation("Selected 'Newest' sort option");
+                            await Task.Delay(2000); // Wait for re-sort
+                            break;
+                        }
+                    }
+                    catch { }
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug("Could not sort reviews: {Message}", ex.Message);
+        }
+    }
+
     private async Task ScrollReviews(int targetCount)
     {
         try
         {
-            var scrollableDiv = _driver.FindElement(By.CssSelector("div[role='main']"));
-            int scrollCount = Math.Min((targetCount / 5) + 1, 4);
+            // Try to find scrollable container with multiple selectors
+            IWebElement? scrollableDiv = null;
+            var containerSelectors = new[]
+            {
+                "div[role='main']",
+                "div.m6QErb",
+                "div.m6QErb.DxyBCb"
+            };
 
+            foreach (var selector in containerSelectors)
+            {
+                try
+                {
+                    scrollableDiv = _driver.FindElement(By.CssSelector(selector));
+                    if (scrollableDiv != null)
+                    {
+                        _logger.LogInformation("Found scrollable container with selector: {Selector}", selector);
+                        break;
+                    }
+                }
+                catch { }
+            }
+
+            if (scrollableDiv == null)
+            {
+                _logger.LogWarning("Could not find scrollable container");
+                return;
+            }
+
+            // Scroll to load more reviews - increased from original but not too aggressive
+            int scrollCount = Math.Min((targetCount / 3) + 3, 15);
             for (int i = 0; i < scrollCount; i++)
             {
                 ((IJavaScriptExecutor)_driver).ExecuteScript(
                     "arguments[0].scrollBy(0, 1000);", scrollableDiv);
-                await Task.Delay(500); // Increased from 200ms
+                await Task.Delay(400);
             }
+
+            _logger.LogInformation("Completed {Count} scroll iterations", scrollCount);
         }
         catch (Exception ex)
         {
@@ -186,16 +334,16 @@ public class GoogleReviewScraper : IReviewScraper, IDisposable
 
         try
         {
+            // Try multiple selectors to find review elements
             var selectors = new[]
             {
                 "div[data-review-id]",
                 ".jftiEf",
-                "div.jftiEf",
-                "[jsaction*='review']",
-                "div[data-review-id], .jftiEf"
+                "div.jftiEf"
             };
 
             IReadOnlyCollection<IWebElement> reviewElements = new List<IWebElement>();
+            string? usedSelector = null;
 
             foreach (var selector in selectors)
             {
@@ -204,27 +352,41 @@ public class GoogleReviewScraper : IReviewScraper, IDisposable
                     reviewElements = _driver.FindElements(By.CssSelector(selector));
                     if (reviewElements.Count > 0)
                     {
-                        _logger.LogInformation("Found {Count} review elements", reviewElements.Count);
+                        usedSelector = selector;
+                        _logger.LogInformation("Found {Count} review elements with selector: {Selector}", reviewElements.Count, selector);
                         break;
                     }
                 }
-                catch { }
+                catch (Exception ex)
+                {
+                    _logger.LogDebug("Selector {Selector} failed: {Message}", selector, ex.Message);
+                }
             }
 
             if (reviewElements.Count == 0)
             {
                 _logger.LogWarning("No review elements found with any selector");
 
-                // Debug logging without storing large page source
+                // Save screenshot and page source for debugging
                 try
                 {
-                    _logger.LogWarning("Page title: {Title}", _driver.Title);
-                    _logger.LogWarning("Current URL: {Url}", _driver.Url);
+                    var screenshot = ((ITakesScreenshot)_driver).GetScreenshot();
+                    var screenshotPath = Path.Combine("/tmp", $"debug_screenshot_{DateTime.Now:yyyyMMdd_HHmmss}.png");
+                    screenshot.SaveAsFile(screenshotPath);
+                    _logger.LogWarning("Screenshot saved to: {Path}", screenshotPath);
+
+                    // Save page HTML for analysis
+                    var htmlPath = Path.Combine("/tmp", $"debug_page_{DateTime.Now:yyyyMMdd_HHmmss}.html");
+                    File.WriteAllText(htmlPath, _driver.PageSource);
+                    _logger.LogWarning("Page HTML saved to: {Path}", htmlPath);
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogWarning("Could not get page info: {Message}", ex.Message);
+                    _logger.LogWarning("Could not save debug files: {Message}", ex.Message);
                 }
+
+                _logger.LogDebug("Page title: {Title}", _driver.Title);
+                _logger.LogDebug("Current URL: {Url}", _driver.Url);
 
                 return reviews;
             }
@@ -236,21 +398,28 @@ public class GoogleReviewScraper : IReviewScraper, IDisposable
                     var review = ExtractReview(element);
                     if (review != null)
                     {
-                        var uniqueKey = $"{review.AuthorName}_{review.Text}";
+                        // Use combination of author + text as unique key
+                        var uniqueKey = $"{review.AuthorName}_{review.Text}_{review.Rating}";
                         if (uniqueReviews.Add(uniqueKey) && !string.IsNullOrEmpty(review.AuthorName))
                         {
                             reviews.Add(review);
+                            _logger.LogDebug("Extracted review from: {Author} ({Rating} stars)", review.AuthorName, review.Rating);
                             if (reviews.Count >= maxReviews)
                                 break;
                         }
                     }
                 }
-                catch { }
+                catch (Exception ex)
+                {
+                    _logger.LogDebug("Error extracting review: {Message}", ex.Message);
+                }
             }
+
+            _logger.LogInformation("Successfully extracted {Count} unique reviews", reviews.Count);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error extracting reviews");
+            _logger.LogError(ex, "Error finding review elements");
         }
 
         return reviews;
@@ -262,77 +431,125 @@ public class GoogleReviewScraper : IReviewScraper, IDisposable
         {
             var review = new Review
             {
-                Id = Guid.NewGuid().ToString()
+                Id = element.GetAttribute("data-review-id") ?? Guid.NewGuid().ToString()
             };
 
-            // Extract author name
-            try
+            // Extract author name with multiple selectors
+            var authorSelectors = new[] { ".d4r55", "button[aria-label]", ".WNxzHc" };
+            foreach (var selector in authorSelectors)
             {
-                var authorElement = element.FindElement(By.CssSelector(".d4r55"));
-                review.AuthorName = authorElement.Text.Trim();
-            }
-            catch { review.AuthorName = "Anonymous"; }
-
-            // Extract rating
-            try
-            {
-                var ratingElement = element.FindElement(By.CssSelector(".kvMYJc"));
-                var ariaLabel = ratingElement.GetAttribute("aria-label");
-
-                var patterns = new[]
+                try
                 {
-                    @"(\d+)\s*star",
-                    @"(\d+)\s*stjärn",
-                    @"(\d+)\s*étoile",
-                    @"(\d+)\s*Stern"
-                };
-
-                foreach (var pattern in patterns)
-                {
-                    var match = Regex.Match(ariaLabel, pattern, RegexOptions.IgnoreCase);
-                    if (match.Success)
+                    var authorElement = element.FindElement(By.CssSelector(selector));
+                    var name = authorElement.Text.Trim();
+                    if (!string.IsNullOrEmpty(name))
                     {
-                        review.Rating = int.Parse(match.Groups[1].Value);
+                        review.AuthorName = name;
                         break;
                     }
                 }
-            }
-            catch { review.Rating = 0; }
-
-            // Extract review text
-            try
-            {
-                var textElement = element.FindElement(By.CssSelector(".wiI7pd"));
-                review.Text = textElement.Text.Trim();
-            }
-            catch { review.Text = ""; }
-
-            // Extract time
-            try
-            {
-                var timeElement = element.FindElement(By.CssSelector(".rsqaWe"));
-                var relativeTime = timeElement.Text.Trim();
-                review.Time = ParseRelativeTime(relativeTime);
-            }
-            catch
-            {
-                review.Time = DateTime.UtcNow;
+                catch { }
             }
 
-            // Extract author URL and photo
-            try
+            // Extract rating from aria-label with multiple selectors
+            var ratingSelectors = new[] { ".kvMYJc", "span[role='img']", ".DU9Pgb", "span[aria-label*='star']" };
+            foreach (var selector in ratingSelectors)
             {
-                var authorLink = element.FindElement(By.CssSelector(".WNxzHc a"));
-                review.AuthorUrl = authorLink.GetAttribute("href") ?? "";
-            }
-            catch { review.AuthorUrl = ""; }
+                try
+                {
+                    var ratingElement = element.FindElement(By.CssSelector(selector));
+                    var ariaLabel = ratingElement.GetAttribute("aria-label");
 
+                    if (!string.IsNullOrEmpty(ariaLabel))
+                    {
+                        // Try multiple patterns for different languages
+                        var patterns = new[]
+                        {
+                            @"(\d+)\s*star", // English: "5 stars"
+                            @"(\d+)\s*stjärn", // Swedish: "5 stjärnor"
+                            @"(\d+)\s*étoile", // French: "5 étoiles"
+                            @"(\d+)\s*Stern" // German: "5 Sterne"
+                        };
+
+                        foreach (var pattern in patterns)
+                        {
+                            var match = Regex.Match(ariaLabel, pattern, RegexOptions.IgnoreCase);
+                            if (match.Success)
+                            {
+                                review.Rating = int.Parse(match.Groups[1].Value);
+                                break;
+                            }
+                        }
+
+                        if (review.Rating > 0) break;
+                    }
+                }
+                catch { }
+            }
+
+            // Extract review text with multiple selectors
+            var textSelectors = new[] { ".wiI7pd", ".MyEned", "span[data-expandable-section]", ".review-full-text" };
+            foreach (var selector in textSelectors)
+            {
+                try
+                {
+                    var textElement = element.FindElement(By.CssSelector(selector));
+                    var text = textElement.Text.Trim();
+                    if (!string.IsNullOrEmpty(text))
+                    {
+                        review.Text = text;
+                        break;
+                    }
+                }
+                catch { }
+            }
+
+            // Extract relative time with multiple selectors
+            var timeSelectors = new[] { ".rsqaWe", ".DU9Pgb", "span.dehysf" };
+            foreach (var selector in timeSelectors)
+            {
+                try
+                {
+                    var timeElement = element.FindElement(By.CssSelector(selector));
+                    var time = timeElement.Text.Trim();
+                    if (!string.IsNullOrEmpty(time))
+                    {
+                        review.RelativeTime = time;
+                        break;
+                    }
+                }
+                catch { }
+            }
+
+            // Extract business response if exists
             try
             {
-                var photoElement = element.FindElement(By.CssSelector(".NBa7we"));
-                review.ProfilePhotoUrl = photoElement.GetAttribute("src") ?? "";
+                var responseSelectors = new[] { ".CDe7pd .wiI7pd", ".owner-response" };
+                foreach (var selector in responseSelectors)
+                {
+                    try
+                    {
+                        var responseElement = element.FindElement(By.CssSelector(selector));
+                        var response = responseElement.Text.Trim();
+                        if (!string.IsNullOrEmpty(response))
+                        {
+                            review.BusinessResponse = response;
+                            break;
+                        }
+                    }
+                    catch { }
+                }
             }
-            catch { review.ProfilePhotoUrl = ""; }
+            catch { }
+
+            review.Time = DateTime.Now;
+            review.Language = "en";
+
+            // Only return if we have at least author name
+            if (string.IsNullOrEmpty(review.AuthorName))
+            {
+                return null;
+            }
 
             return review;
         }
@@ -340,125 +557,6 @@ public class GoogleReviewScraper : IReviewScraper, IDisposable
         {
             _logger.LogDebug("Failed to extract review: {Message}", ex.Message);
             return null;
-        }
-    }
-
-    private DateTime ParseRelativeTime(string relativeTime)
-    {
-        var now = DateTime.UtcNow;
-        var lowerTime = relativeTime.ToLower();
-
-        try
-        {
-            // Handle "a [unit] ago" / "an [unit] ago" / "ett [unit] sedan" (e.g., "a month ago", "ett år sedan")
-            if (Regex.IsMatch(lowerTime, @"\b(a|an|en|ett)\s+(second|sekund|minute|minut|hour|timme|day|dag|week|vecka|month|månad|year|år)", RegexOptions.IgnoreCase))
-            {
-                var result = now;
-                if (lowerTime.Contains("second") || lowerTime.Contains("sekund")) result = now.AddSeconds(-1);
-                else if (lowerTime.Contains("minute") || lowerTime.Contains("minut")) result = now.AddMinutes(-1);
-                else if (lowerTime.Contains("hour") || lowerTime.Contains("timme")) result = now.AddHours(-1);
-                else if (lowerTime.Contains("day") || lowerTime.Contains("dag")) result = now.AddDays(-1);
-                else if (lowerTime.Contains("week") || lowerTime.Contains("vecka")) result = now.AddDays(-7);
-                else if (lowerTime.Contains("month") || lowerTime.Contains("månad")) result = now.AddMonths(-1);
-                else if (lowerTime.Contains("year") || lowerTime.Contains("år")) result = now.AddYears(-1);
-
-                return result;
-            }
-
-            // Pattern: "X [unit] ago" or "för X [unit] sedan" (Swedish)
-            // Support both singular and plural: year/years/år, month/months/månad/månader, etc.
-            // Match variations: "3 months ago", "för 3 månader sedan", "3 days ago"
-            var match = Regex.Match(lowerTime, @"(\d+)\s*(second|sekund|minute|minut|hour|timme|timmar|day|dag|dagar|week|vecka|veckor|month|månad|månader|year|år)s?\b", RegexOptions.IgnoreCase);
-
-            if (match.Success)
-            {
-                var value = int.Parse(match.Groups[1].Value);
-                var unit = match.Groups[2].Value.ToLower();
-
-                return unit switch
-                {
-                    var u when u.Contains("second") || u.Contains("sekund") => now.AddSeconds(-value),
-                    var u when u.Contains("minute") || u.Contains("minut") => now.AddMinutes(-value),
-                    var u when u.Contains("hour") || u.Contains("timme") || u.Contains("timmar") => now.AddHours(-value),
-                    var u when u.Contains("day") || u.Contains("dag") => now.AddDays(-value),
-                    var u when u.Contains("week") || u.Contains("vecka") || u.Contains("veckor") => now.AddDays(-value * 7),
-                    var u when u.Contains("month") || u.Contains("månad") || u.Contains("månader") => now.AddMonths(-value),
-                    var u when u.Contains("year") || u.Contains("år") => now.AddYears(-value),
-                    _ => now
-                };
-            }
-        }
-        catch
-        {
-            // Failed to parse, return current time
-        }
-
-        return now;
-    }
-
-    public void Dispose()
-    {
-        if (!_disposed)
-        {
-            _logger.LogDebug("Disposing ChromeDriver with service PID: {ProcessId}", _serviceProcessId);
-
-            try
-            {
-                // Quit the driver first (this should close browser and stop service)
-                _driver?.Quit();
-            }
-            catch (Exception ex)
-            {
-                _logger.LogDebug("Error quitting driver: {Message}", ex.Message);
-            }
-
-            try
-            {
-                // Dispose the driver object
-                _driver?.Dispose();
-            }
-            catch (Exception ex)
-            {
-                _logger.LogDebug("Error disposing driver: {Message}", ex.Message);
-            }
-
-            // Force kill the ChromeDriver service process if it's still running
-            try
-            {
-                var serviceProcess = Process.GetProcessById(_serviceProcessId);
-                if (!serviceProcess.HasExited)
-                {
-                    _logger.LogDebug("ChromeDriver service {ProcessId} still running, killing it", _serviceProcessId);
-                    serviceProcess.Kill(true); // true = kill entire process tree
-                    serviceProcess.WaitForExit(3000); // Wait up to 3 seconds
-                    _logger.LogDebug("Killed ChromeDriver service {ProcessId}", _serviceProcessId);
-                }
-            }
-            catch (ArgumentException)
-            {
-                // Process already exited - this is fine
-                _logger.LogDebug("ChromeDriver service {ProcessId} already exited", _serviceProcessId);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning("Error killing ChromeDriver service {ProcessId}: {Message}", _serviceProcessId, ex.Message);
-            }
-
-            try
-            {
-                // Dispose the service
-                _service?.Dispose();
-            }
-            catch (Exception ex)
-            {
-                _logger.LogDebug("Error disposing service: {Message}", ex.Message);
-            }
-
-            // Small delay to ensure cleanup completes
-            Thread.Sleep(500);
-
-            _disposed = true;
-            _logger.LogDebug("ChromeDriver disposal complete for service PID: {ProcessId}", _serviceProcessId);
         }
     }
 
@@ -474,11 +572,16 @@ public class GoogleReviewScraper : IReviewScraper, IDisposable
             _logger.LogInformation("Searching for: {Query}", searchQuery);
             _driver.Navigate().GoToUrl(searchUrl);
 
-            await Task.Delay(2000);
-            await HandleConsentDialog();
+            // Wait for page load
             await Task.Delay(2000);
 
-            // Try to click first search result
+            // Handle consent if it appears
+            await HandleConsent();
+
+            // Wait for search results to load
+            await Task.Delay(2000);
+
+            // Try to click on the first search result
             try
             {
                 var resultSelectors = new[]
@@ -509,11 +612,13 @@ public class GoogleReviewScraper : IReviewScraper, IDisposable
                 _logger.LogWarning("Could not click first result: {Message}", ex.Message);
             }
 
-            return new Company
+            var company = new Company
             {
                 Name = companyName,
                 GoogleMapsUrl = _driver.Url
             };
+
+            return company;
         }
         catch (Exception ex)
         {
@@ -527,7 +632,7 @@ public class GoogleReviewScraper : IReviewScraper, IDisposable
         var company = await SearchCompanyAsync(companyName, location);
         if (company == null) return null;
 
-        var reviews = await ScrapeReviewsAsync(company.GoogleMapsUrl ?? "", options);
+        var reviews = await ScrapeReviewsAsync(company.GoogleMapsUrl, options);
         company.Reviews = reviews;
 
         return company;
@@ -594,6 +699,94 @@ public class GoogleReviewScraper : IReviewScraper, IDisposable
         {
             _logger.LogError(ex, "Error extracting company info");
             return null;
+        }
+    }
+
+    public async Task<Company?> ScrapeReviewsByPlaceIdAsync(string placeId, ScrapingOptions? options = null)
+    {
+        try
+        {
+            _logger.LogInformation("Scraping reviews for Place ID: {PlaceId}", placeId);
+
+            // Convert Place ID to Google Maps URL
+            var placeUrl = ConvertPlaceIdToUrl(placeId);
+            _driver.Navigate().GoToUrl(placeUrl);
+
+            // Wait for initial load
+            await Task.Delay(2000);
+
+            // Handle consent
+            await HandleConsent();
+
+            // Wait for page to fully load
+            await Task.Delay(3000);
+
+            // Try to find and click the place card/marker that appears on the map
+            var placeCardSelectors = new[]
+            {
+                "a[href*='/maps/place/']",  // Link to place
+                "div[role='article']",       // Place card
+                "div.Nv2PK",                 // Search result card
+                "button[aria-label*='place']", // Place button
+                "div[jsaction*='mouseup']",  // Interactive place element
+                "a.hfpxzc"                   // Place link in sidebar
+            };
+
+            bool clickedPlace = false;
+            foreach (var selector in placeCardSelectors)
+            {
+                try
+                {
+                    var placeElement = _driver.FindElement(By.CssSelector(selector));
+                    if (placeElement != null && placeElement.Displayed)
+                    {
+                        _logger.LogInformation("Clicking place element with selector: {Selector}", selector);
+                        placeElement.Click();
+                        await Task.Delay(3000);
+                        clickedPlace = true;
+                        break;
+                    }
+                }
+                catch { }
+            }
+
+            if (!clickedPlace)
+            {
+                _logger.LogWarning("Could not find place card to click, trying to proceed with current page");
+            }
+
+            // Get the final URL after any redirects/clicks
+            var finalUrl = _driver.Url;
+            _logger.LogInformation("Final URL after Place ID navigation: {Url}", finalUrl);
+
+            // Now scrape reviews from the page
+            var reviews = await ScrapeReviewsAsync(finalUrl, options);
+
+            // Extract company info
+            var company = await ExtractCompanyInfoAsync(finalUrl);
+            if (company != null)
+            {
+                company.PlaceId = placeId;
+                company.Reviews = reviews;
+                company.GoogleMapsUrl = finalUrl;
+            }
+
+            return company;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error scraping reviews by Place ID");
+            return null;
+        }
+    }
+
+    public void Dispose()
+    {
+        if (!_disposed)
+        {
+            _driver?.Quit();
+            _driver?.Dispose();
+            _disposed = true;
         }
     }
 }
