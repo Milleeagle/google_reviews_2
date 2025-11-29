@@ -8,5 +8,6 @@ public interface IReviewScraper
     Task<Company?> SearchCompanyAsync(string companyName, string? location = null);
     Task<Company?> ScrapeCompanyWithReviewsAsync(string companyName, string? location = null, ScrapingOptions? options = null);
     Task<Company?> ExtractCompanyInfoAsync(string googleMapsUrl);
+    Task<Company?> ScrapeReviewsByPlaceIdAsync(string placeId, ScrapingOptions? options = null);
     void Dispose();
 }
