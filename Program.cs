@@ -28,6 +28,8 @@ builder.Services.AddScoped<IGoogleDriveService, GoogleDriveService>();
 builder.Services.AddScoped<IEmailService, EmailService>();
 builder.Services.AddScoped<IExcelService, ExcelService>();
 builder.Services.AddScoped<IScheduledMonitorService, ScheduledMonitorService>();
+builder.Services.AddScoped<ILanguageDetectionService, LanguageDetectionService>();
+builder.Services.AddScoped<IReviewManagementService, ReviewManagementService>();
 // IReviewScraper is created manually when needed to avoid Chrome driver accumulation
 builder.Services.AddSingleton<BatchProgressService>();
 // Disabled to prevent automatic API calls - re-enable when needed
