@@ -19,47 +19,14 @@ namespace google_reviews.Services
             try
             {
                 var totalCount = await _context.Reviews.CountAsync();
-                _logger.LogInformation("Starting deletion of {Count} reviews in batches", totalCount);
+                _logger.LogInformation("Deleting all {Count} reviews using direct SQL", totalCount);
 
-                int deletedCount = 0;
-                int batchSize = 1000;
-                int batchNumber = 0;
+                // Use direct SQL to delete all reviews without loading into memory
+                // This is much faster and doesn't fill the transaction log
+                await _context.Database.ExecuteSqlRawAsync("DELETE FROM Reviews");
 
-                while (true)
-                {
-                    batchNumber++;
-
-                    // Get a batch of review IDs
-                    var batchIds = await _context.Reviews
-                        .Select(r => r.Id)
-                        .Take(batchSize)
-                        .ToListAsync();
-
-                    if (!batchIds.Any())
-                        break;
-
-                    _logger.LogInformation("Deleting batch {BatchNumber}: {Count} reviews", batchNumber, batchIds.Count);
-
-                    // Delete the batch in a separate transaction
-                    using var transaction = await _context.Database.BeginTransactionAsync();
-
-                    var reviewsToDelete = await _context.Reviews
-                        .Where(r => batchIds.Contains(r.Id))
-                        .ToListAsync();
-
-                    _context.Reviews.RemoveRange(reviewsToDelete);
-                    await _context.SaveChangesAsync();
-                    await transaction.CommitAsync();
-
-                    deletedCount += reviewsToDelete.Count;
-                    _logger.LogInformation("Progress: {Deleted}/{Total} reviews deleted", deletedCount, totalCount);
-
-                    // Small delay to allow transaction log to clear
-                    await Task.Delay(100);
-                }
-
-                _logger.LogInformation("Completed deletion of {Count} reviews", deletedCount);
-                return deletedCount;
+                _logger.LogInformation("Successfully deleted all {Count} reviews", totalCount);
+                return totalCount;
             }
             catch (Exception ex)
             {
