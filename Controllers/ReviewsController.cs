@@ -17,6 +17,7 @@ namespace google_reviews.Controllers
         private readonly IExcelService _excelService;
         private readonly BatchProgressService _progressService;
         private readonly IServiceScopeFactory _serviceScopeFactory;
+        private readonly IReviewManagementService _reviewManagementService;
 
         public ReviewsController(
             ApplicationDbContext context,
@@ -25,7 +26,8 @@ namespace google_reviews.Controllers
             IEmailService emailService,
             IExcelService excelService,
             BatchProgressService progressService,
-            IServiceScopeFactory serviceScopeFactory)
+            IServiceScopeFactory serviceScopeFactory,
+            IReviewManagementService reviewManagementService)
         {
             _context = context;
             _googlePlacesService = googlePlacesService;
@@ -34,6 +36,7 @@ namespace google_reviews.Controllers
             _excelService = excelService;
             _progressService = progressService;
             _serviceScopeFactory = serviceScopeFactory;
+            _reviewManagementService = reviewManagementService;
         }
 
         // GET: Reviews
@@ -2485,6 +2488,74 @@ namespace google_reviews.Controllers
                 });
             }
         }
+
+        // GET: Reviews/ManageReviews
+        [Authorize(Policy = "AdminOnly")]
+        public async Task<IActionResult> ManageReviews()
+        {
+            return View();
+        }
+
+        // POST: Reviews/DeleteAllReviews
+        [HttpPost]
+        [Authorize(Policy = "AdminOnly")]
+        public async Task<IActionResult> DeleteAllReviews()
+        {
+            try
+            {
+                var count = await _reviewManagementService.DeleteAllReviewsAsync();
+                return Json(new { success = true, message = $"Successfully deleted {count} reviews", count });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error deleting all reviews");
+                return Json(new { success = false, message = $"Error: {ex.Message}" });
+            }
+        }
+
+        // POST: Reviews/DeleteReviewsByInitial
+        [HttpPost]
+        [Authorize(Policy = "AdminOnly")]
+        public async Task<IActionResult> DeleteReviewsByInitial([FromBody] DeleteByInitialRequest request)
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(request.Initial) || request.Initial.Length != 1)
+                {
+                    return Json(new { success = false, message = "Invalid initial provided" });
+                }
+
+                var count = await _reviewManagementService.DeleteReviewsByInitialAsync(request.Initial[0]);
+                return Json(new { success = true, message = $"Successfully deleted {count} reviews for companies starting with '{request.Initial.ToUpper()}'", count });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error deleting reviews by initial");
+                return Json(new { success = false, message = $"Error: {ex.Message}" });
+            }
+        }
+
+        // GET: Reviews/GetReviewStats
+        [HttpGet]
+        [Authorize(Policy = "AdminOnly")]
+        public async Task<IActionResult> GetReviewStats()
+        {
+            try
+            {
+                var (totalReviews, totalCompanies) = await _reviewManagementService.GetReviewStatsAsync();
+                return Json(new { success = true, totalReviews, totalCompanies });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error getting review stats");
+                return Json(new { success = false, message = $"Error: {ex.Message}" });
+            }
+        }
+    }
+
+    public class DeleteByInitialRequest
+    {
+        public string Initial { get; set; } = "";
     }
 
     public class DuplicateGroup

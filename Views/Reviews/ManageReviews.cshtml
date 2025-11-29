@@ -1,0 +1,169 @@
+@{
+    ViewData["Title"] = "Manage Reviews";
+}
+
+<div class="container mt-4">
+    <h2>🗑️ Manage Reviews</h2>
+    <p class="text-muted">Delete reviews from the database. This action cannot be undone!</p>
+
+    <div class="row mt-4">
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header bg-info text-white">
+                    <h5 class="mb-0">📊 Database Statistics</h5>
+                </div>
+                <div class="card-body">
+                    <div id="statsContent">
+                        <div class="d-flex justify-content-center">
+                            <div class="spinner-border" role="status">
+                                <span class="visually-hidden">Loading...</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-6">
+            <div class="card border-danger">
+                <div class="card-header bg-danger text-white">
+                    <h5 class="mb-0">⚠️ Danger Zone</h5>
+                </div>
+                <div class="card-body">
+                    <p class="text-danger"><strong>Warning:</strong> These actions are permanent and cannot be undone!</p>
+                    <button class="btn btn-danger w-100" onclick="deleteAllReviews()">
+                        Delete All Reviews
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card mt-4">
+        <div class="card-header">
+            <h5 class="mb-0">🔤 Delete by Company Name Initial</h5>
+        </div>
+        <div class="card-body">
+            <p>Delete all reviews for companies whose names start with a specific letter:</p>
+            <div class="d-flex flex-wrap gap-2" id="letterButtons">
+                @for (char c = 'A'; c <= 'Z'; c++)
+                {
+                    <button class="btn btn-outline-primary" onclick="deleteByInitial('@c')">@c</button>
+                }
+            </div>
+            <div id="deleteResult" class="mt-3"></div>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+    <script>
+        $(document).ready(function() {
+            loadStats();
+        });
+
+        function loadStats() {
+            $.get('/Reviews/GetReviewStats', function(response) {
+                if (response.success) {
+                    $('#statsContent').html(`
+                        <div class="row text-center">
+                            <div class="col-6">
+                                <h3 class="text-primary">${response.totalReviews.toLocaleString()}</h3>
+                                <p class="text-muted">Total Reviews</p>
+                            </div>
+                            <div class="col-6">
+                                <h3 class="text-success">${response.totalCompanies.toLocaleString()}</h3>
+                                <p class="text-muted">Total Companies</p>
+                            </div>
+                        </div>
+                    `);
+                } else {
+                    $('#statsContent').html(`
+                        <div class="alert alert-danger">
+                            Error loading stats: ${response.message || 'Unknown error'}
+                        </div>
+                    `);
+                }
+            }).fail(function() {
+                $('#statsContent').html(`
+                    <div class="alert alert-danger">
+                        Failed to load statistics
+                    </div>
+                `);
+            });
+        }
+
+        function deleteAllReviews() {
+            if (!confirm('Are you sure you want to DELETE ALL REVIEWS? This cannot be undone!')) {
+                return;
+            }
+
+            if (!confirm('This is your last chance. Click OK to permanently delete ALL reviews from the database.')) {
+                return;
+            }
+
+            $.ajax({
+                url: '/Reviews/DeleteAllReviews',
+                type: 'POST',
+                headers: {
+                    'RequestVerificationToken': $('input[name="__RequestVerificationToken"]').val()
+                },
+                success: function(response) {
+                    if (response.success) {
+                        alert(response.message);
+                        loadStats();
+                    } else {
+                        alert('Error: ' + response.message);
+                    }
+                },
+                error: function() {
+                    alert('Failed to delete reviews');
+                }
+            });
+        }
+
+        function deleteByInitial(initial) {
+            if (!confirm(`Delete all reviews for companies starting with "${initial}"?`)) {
+                return;
+            }
+
+            $.ajax({
+                url: '/Reviews/DeleteReviewsByInitial',
+                type: 'POST',
+                contentType: 'application/json',
+                data: JSON.stringify({ initial: initial }),
+                headers: {
+                    'RequestVerificationToken': $('input[name="__RequestVerificationToken"]').val()
+                },
+                success: function(response) {
+                    if (response.success) {
+                        $('#deleteResult').html(`
+                            <div class="alert alert-success alert-dismissible fade show" role="alert">
+                                ${response.message}
+                                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                            </div>
+                        `);
+                        loadStats();
+                    } else {
+                        $('#deleteResult').html(`
+                            <div class="alert alert-danger alert-dismissible fade show" role="alert">
+                                Error: ${response.message}
+                                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                            </div>
+                        `);
+                    }
+                },
+                error: function() {
+                    $('#deleteResult').html(`
+                        <div class="alert alert-danger alert-dismissible fade show" role="alert">
+                            Failed to delete reviews
+                            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                        </div>
+                    `);
+                }
+            });
+        }
+    </script>
+}
+
+@Html.AntiForgeryToken()
