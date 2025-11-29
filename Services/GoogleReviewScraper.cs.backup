@@ -48,14 +48,21 @@ public class GoogleReviewScraper : IReviewScraper, IDisposable
         _logger.LogDebug("Created ChromeDriver with service PID: {ProcessId}", _serviceProcessId);
     }
 
-    public async Task<List<Review>> ScrapeReviewsAsync(string googleMapsUrl, ScrapingOptions? options = null)
+    public async Task<List<Review>> ScrapeReviewsAsync(string placeId)
     {
-        options ??= new ScrapingOptions();
         var reviews = new List<Review>();
+
+        // Skip known problematic place IDs
+        if (placeId == "ChIJiQDEAHedX0YRNE9wzvvLI38")
+        {
+            _logger.LogWarning("Skipping known problematic Place ID: {PlaceId}", placeId);
+            return reviews;
+        }
 
         try
         {
-            _logger.LogInformation("Navigating to: {Url}", googleMapsUrl);
+            var googleMapsUrl = $"https://www.google.com/maps/place/?q=place_id:{placeId}";
+            _logger.LogInformation("Scraping reviews for Place ID: {PlaceId}", placeId);
             _driver.Navigate().GoToUrl(googleMapsUrl);
 
             // Wait for page load
@@ -77,13 +84,13 @@ public class GoogleReviewScraper : IReviewScraper, IDisposable
             await ScrollReviews(100);
 
             // Extract reviews
-            reviews = ExtractAllReviews(options.MaxReviews);
+            reviews = ExtractAllReviews(100);
 
-            _logger.LogInformation("Scraped {Count} reviews from {Url}", reviews.Count, googleMapsUrl);
+            _logger.LogInformation("Scraped {Count} reviews for Place ID: {PlaceId}", reviews.Count, placeId);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error scraping reviews from {Url}", googleMapsUrl);
+            _logger.LogError(ex, "Error scraping reviews for Place ID: {PlaceId}", placeId);
         }
 
         return reviews;
@@ -459,141 +466,6 @@ public class GoogleReviewScraper : IReviewScraper, IDisposable
 
             _disposed = true;
             _logger.LogDebug("ChromeDriver disposal complete for service PID: {ProcessId}", _serviceProcessId);
-        }
-    }
-
-    public async Task<Company?> SearchCompanyAsync(string companyName, string? location = null)
-    {
-        try
-        {
-            var searchQuery = string.IsNullOrEmpty(location)
-                ? companyName
-                : $"{companyName} {location}";
-
-            var searchUrl = $"https://www.google.com/maps/search/{Uri.EscapeDataString(searchQuery)}";
-            _logger.LogInformation("Searching for: {Query}", searchQuery);
-            _driver.Navigate().GoToUrl(searchUrl);
-
-            await Task.Delay(2000);
-            await HandleConsentDialog();
-            await Task.Delay(2000);
-
-            // Try to click first search result
-            try
-            {
-                var resultSelectors = new[]
-                {
-                    "a[href*='/maps/place/']",
-                    "div.Nv2PK a",
-                    "a.hfpxzc"
-                };
-
-                foreach (var selector in resultSelectors)
-                {
-                    try
-                    {
-                        var firstResult = _driver.FindElement(By.CssSelector(selector));
-                        if (firstResult != null && firstResult.Displayed)
-                        {
-                            _logger.LogInformation("Clicking first search result");
-                            firstResult.Click();
-                            await Task.Delay(2000);
-                            break;
-                        }
-                    }
-                    catch { }
-                }
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning("Could not click first result: {Message}", ex.Message);
-            }
-
-            return new Company
-            {
-                Name = companyName,
-                GoogleMapsUrl = _driver.Url
-            };
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error searching for company");
-            return null;
-        }
-    }
-
-    public async Task<Company?> ScrapeCompanyWithReviewsAsync(string companyName, string? location = null, ScrapingOptions? options = null)
-    {
-        var company = await SearchCompanyAsync(companyName, location);
-        if (company == null) return null;
-
-        var reviews = await ScrapeReviewsAsync(company.GoogleMapsUrl ?? "", options);
-        company.Reviews = reviews;
-
-        return company;
-    }
-
-    public async Task<Company?> ExtractCompanyInfoAsync(string googleMapsUrl)
-    {
-        try
-        {
-            _driver.Navigate().GoToUrl(googleMapsUrl);
-            await Task.Delay(2000);
-
-            var company = new Company
-            {
-                GoogleMapsUrl = googleMapsUrl
-            };
-
-            // Extract company name
-            try
-            {
-                var nameElement = _driver.FindElement(By.CssSelector("h1.DUwDvf, h1.fontHeadlineLarge"));
-                company.Name = nameElement.Text.Trim();
-            }
-            catch { }
-
-            // Extract address
-            try
-            {
-                var addressElement = _driver.FindElement(By.CssSelector("button[data-item-id*='address'], .rogA2c"));
-                company.Address = addressElement.Text.Trim();
-            }
-            catch { }
-
-            // Extract phone
-            try
-            {
-                var phoneElement = _driver.FindElement(By.CssSelector("button[data-item-id*='phone']"));
-                company.PhoneNumber = phoneElement.Text.Trim();
-            }
-            catch { }
-
-            // Extract website
-            try
-            {
-                var websiteElement = _driver.FindElement(By.CssSelector("a[data-item-id*='authority']"));
-                company.Website = websiteElement.GetAttribute("href");
-            }
-            catch { }
-
-            // Extract rating
-            try
-            {
-                var ratingElement = _driver.FindElement(By.CssSelector(".F7nice span[aria-hidden='true']"));
-                if (double.TryParse(ratingElement.Text, out var rating))
-                {
-                    company.OverallRating = rating;
-                }
-            }
-            catch { }
-
-            return company;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error extracting company info");
-            return null;
         }
     }
 }

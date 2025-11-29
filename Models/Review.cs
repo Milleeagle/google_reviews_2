@@ -26,7 +26,16 @@ namespace google_reviews.Models
         
         [Display(Name = "Author Photo URL")]
         public string? ProfilePhotoUrl { get; set; }
-        
+
+        [Display(Name = "Relative Time")]
+        public string? RelativeTime { get; set; }
+
+        [Display(Name = "Business Response")]
+        public string? BusinessResponse { get; set; }
+
+        [Display(Name = "Language")]
+        public string? Language { get; set; }
+
         // Navigation property
         public virtual Company? Company { get; set; }
     }

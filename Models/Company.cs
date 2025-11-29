@@ -28,7 +28,22 @@ namespace google_reviews.Models
 
         [Display(Name = "Last Updated")]
         public DateTime LastUpdated { get; set; } = DateTime.UtcNow;
-        
+
+        [Display(Name = "Address")]
+        public string? Address { get; set; }
+
+        [Display(Name = "Phone Number")]
+        [Phone]
+        public string? PhoneNumber { get; set; }
+
+        [Display(Name = "Website")]
+        [Url]
+        public string? Website { get; set; }
+
+        [Display(Name = "Overall Rating")]
+        [Range(0.0, 5.0)]
+        public double? OverallRating { get; set; }
+
         // Navigation property
         public virtual ICollection<Review> Reviews { get; set; } = new List<Review>();
     }
