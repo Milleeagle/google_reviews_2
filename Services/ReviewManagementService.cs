@@ -18,15 +18,48 @@ namespace google_reviews.Services
         {
             try
             {
-                using var transaction = await _context.Database.BeginTransactionAsync();
+                var totalCount = await _context.Reviews.CountAsync();
+                _logger.LogInformation("Starting deletion of {Count} reviews in batches", totalCount);
 
-                var count = await _context.Reviews.CountAsync();
-                _context.Reviews.RemoveRange(_context.Reviews);
-                await _context.SaveChangesAsync();
-                await transaction.CommitAsync();
+                int deletedCount = 0;
+                int batchSize = 1000;
+                int batchNumber = 0;
 
-                _logger.LogInformation("Deleted all {Count} reviews", count);
-                return count;
+                while (true)
+                {
+                    batchNumber++;
+
+                    // Get a batch of review IDs
+                    var batchIds = await _context.Reviews
+                        .Select(r => r.Id)
+                        .Take(batchSize)
+                        .ToListAsync();
+
+                    if (!batchIds.Any())
+                        break;
+
+                    _logger.LogInformation("Deleting batch {BatchNumber}: {Count} reviews", batchNumber, batchIds.Count);
+
+                    // Delete the batch in a separate transaction
+                    using var transaction = await _context.Database.BeginTransactionAsync();
+
+                    var reviewsToDelete = await _context.Reviews
+                        .Where(r => batchIds.Contains(r.Id))
+                        .ToListAsync();
+
+                    _context.Reviews.RemoveRange(reviewsToDelete);
+                    await _context.SaveChangesAsync();
+                    await transaction.CommitAsync();
+
+                    deletedCount += reviewsToDelete.Count;
+                    _logger.LogInformation("Progress: {Deleted}/{Total} reviews deleted", deletedCount, totalCount);
+
+                    // Small delay to allow transaction log to clear
+                    await Task.Delay(100);
+                }
+
+                _logger.LogInformation("Completed deletion of {Count} reviews", deletedCount);
+                return deletedCount;
             }
             catch (Exception ex)
             {
@@ -39,21 +72,57 @@ namespace google_reviews.Services
         {
             try
             {
-                using var transaction = await _context.Database.BeginTransactionAsync();
-
                 var initialUpper = char.ToUpper(initial);
-                var reviewsToDelete = await _context.Reviews
+
+                // Get total count first
+                var totalCount = await _context.Reviews
                     .Include(r => r.Company)
                     .Where(r => r.Company != null && r.Company.Name.ToUpper().StartsWith(initialUpper.ToString()))
-                    .ToListAsync();
+                    .CountAsync();
 
-                var count = reviewsToDelete.Count;
-                _context.Reviews.RemoveRange(reviewsToDelete);
-                await _context.SaveChangesAsync();
-                await transaction.CommitAsync();
+                _logger.LogInformation("Starting deletion of {Count} reviews for companies starting with '{Initial}' in batches", totalCount, initialUpper);
 
-                _logger.LogInformation("Deleted {Count} reviews for companies starting with '{Initial}'", count, initialUpper);
-                return count;
+                int deletedCount = 0;
+                int batchSize = 1000;
+                int batchNumber = 0;
+
+                while (true)
+                {
+                    batchNumber++;
+
+                    // Get a batch of review IDs
+                    var batchIds = await _context.Reviews
+                        .Include(r => r.Company)
+                        .Where(r => r.Company != null && r.Company.Name.ToUpper().StartsWith(initialUpper.ToString()))
+                        .Select(r => r.Id)
+                        .Take(batchSize)
+                        .ToListAsync();
+
+                    if (!batchIds.Any())
+                        break;
+
+                    _logger.LogInformation("Deleting batch {BatchNumber} for '{Initial}': {Count} reviews", batchNumber, initialUpper, batchIds.Count);
+
+                    // Delete the batch in a separate transaction
+                    using var transaction = await _context.Database.BeginTransactionAsync();
+
+                    var reviewsToDelete = await _context.Reviews
+                        .Where(r => batchIds.Contains(r.Id))
+                        .ToListAsync();
+
+                    _context.Reviews.RemoveRange(reviewsToDelete);
+                    await _context.SaveChangesAsync();
+                    await transaction.CommitAsync();
+
+                    deletedCount += reviewsToDelete.Count;
+                    _logger.LogInformation("Progress: {Deleted}/{Total} reviews deleted for '{Initial}'", deletedCount, totalCount, initialUpper);
+
+                    // Small delay to allow transaction log to clear
+                    await Task.Delay(100);
+                }
+
+                _logger.LogInformation("Completed deletion of {Count} reviews for companies starting with '{Initial}'", deletedCount, initialUpper);
+                return deletedCount;
             }
             catch (Exception ex)
             {
