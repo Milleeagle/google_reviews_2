@@ -19,14 +19,30 @@ namespace google_reviews.Services
             try
             {
                 var totalCount = await _context.Reviews.CountAsync();
-                _logger.LogInformation("Deleting all {Count} reviews using direct SQL", totalCount);
+                _logger.LogInformation("Deleting all {Count} reviews in batches using SQL", totalCount);
 
-                // Use direct SQL to delete all reviews without loading into memory
-                // This is much faster and doesn't fill the transaction log
-                await _context.Database.ExecuteSqlRawAsync("DELETE FROM Reviews");
+                int deletedCount = 0;
+                int batchSize = 5000; // Delete 5000 at a time to avoid filling transaction log
 
-                _logger.LogInformation("Successfully deleted all {Count} reviews", totalCount);
-                return totalCount;
+                while (true)
+                {
+                    // Delete in batches using raw SQL (much faster than EF)
+                    // Each DELETE is a separate transaction
+                    var rowsDeleted = await _context.Database.ExecuteSqlRawAsync(
+                        $"DELETE TOP ({batchSize}) FROM Reviews");
+
+                    if (rowsDeleted == 0)
+                        break;
+
+                    deletedCount += rowsDeleted;
+                    _logger.LogInformation("Progress: {Deleted}/{Total} reviews deleted", deletedCount, totalCount);
+
+                    // Small delay to allow transaction log to flush
+                    await Task.Delay(100);
+                }
+
+                _logger.LogInformation("Successfully deleted {Count} reviews", deletedCount);
+                return deletedCount;
             }
             catch (Exception ex)
             {
