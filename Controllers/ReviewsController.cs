@@ -510,7 +510,13 @@ namespace google_reviews.Controllers
                 // Create a new scraper instance for this request
                 var scraperLogger = HttpContext.RequestServices.GetRequiredService<ILogger<GoogleReviewScraper>>();
                 scraper = new GoogleReviewScraper(scraperLogger);
-                var reviews = await scraper.ScrapeReviewsAsync(company.PlaceId);
+
+                // Convert PlaceId to Google Maps URL
+                var url = !string.IsNullOrEmpty(company.GoogleMapsUrl)
+                    ? company.GoogleMapsUrl
+                    : $"https://www.google.com/maps/place/?q=place_id:{company.PlaceId}";
+
+                var reviews = await scraper.ScrapeReviewsAsync(url);
 
                 if (reviews != null && reviews.Any())
                 {
@@ -745,7 +751,13 @@ namespace google_reviews.Controllers
 
                             // Create a new scraper instance for this company
                             scraper = new GoogleReviewScraper(loggerFactory.CreateLogger<GoogleReviewScraper>());
-                            var reviews = await scraper.ScrapeReviewsAsync(company.PlaceId!);
+
+                            // Convert PlaceId to Google Maps URL
+                            var url = !string.IsNullOrEmpty(company.GoogleMapsUrl)
+                                ? company.GoogleMapsUrl
+                                : $"https://www.google.com/maps/place/?q=place_id:{company.PlaceId}";
+
+                            var reviews = await scraper.ScrapeReviewsAsync(url);
 
                             if (reviews != null && reviews.Any())
                             {
