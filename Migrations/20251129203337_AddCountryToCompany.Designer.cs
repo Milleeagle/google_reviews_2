@@ -12,8 +12,8 @@ using google_reviews.Data;
 namespace google_reviews.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    [Migration("20251129082802_AddScraperEnhancedFields")]
-    partial class AddScraperEnhancedFields
+    [Migration("20251129203337_AddCountryToCompany")]
+    partial class AddCountryToCompany
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -234,6 +234,10 @@ namespace google_reviews.Migrations
 
                     b.Property<string>("Address")
                         .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("Country")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
 
                     b.Property<string>("EmailAddress")
                         .HasColumnType("nvarchar(max)");

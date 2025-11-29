@@ -425,6 +425,77 @@ public class GoogleReviewScraper : IReviewScraper, IDisposable
         return reviews;
     }
 
+    private DateTime ParseRelativeTime(string relativeTime)
+    {
+        try
+        {
+            var now = DateTime.Now;
+            var lowerTime = relativeTime.ToLower();
+
+            // Extract number from the string
+            var match = System.Text.RegularExpressions.Regex.Match(lowerTime, @"(\d+)");
+            if (!match.Success)
+            {
+                // If no number found (e.g., "a day ago", "a month ago"), assume 1
+                if (lowerTime.Contains("dag") || lowerTime.Contains("day"))
+                    return now.AddDays(-1);
+                if (lowerTime.Contains("vecka") || lowerTime.Contains("week"))
+                    return now.AddDays(-7);
+                if (lowerTime.Contains("månad") || lowerTime.Contains("month"))
+                    return now.AddMonths(-1);
+                if (lowerTime.Contains("år") || lowerTime.Contains("year"))
+                    return now.AddYears(-1);
+
+                return now; // Default to now if can't parse
+            }
+
+            var number = int.Parse(match.Groups[1].Value);
+
+            // Days - English: "day(s) ago", Swedish: "dag(ar) sedan"
+            if (lowerTime.Contains("dag") || lowerTime.Contains("day"))
+            {
+                return now.AddDays(-number);
+            }
+
+            // Weeks - English: "week(s) ago", Swedish: "vecka/veckor sedan"
+            if (lowerTime.Contains("vecka") || lowerTime.Contains("veckor") || lowerTime.Contains("week"))
+            {
+                return now.AddDays(-number * 7);
+            }
+
+            // Months - English: "month(s) ago", Swedish: "månad/månader sedan"
+            if (lowerTime.Contains("månad") || lowerTime.Contains("månader") || lowerTime.Contains("month"))
+            {
+                return now.AddMonths(-number);
+            }
+
+            // Years - English: "year(s) ago", Swedish: "år sedan"
+            if (lowerTime.Contains("år") || lowerTime.Contains("year"))
+            {
+                return now.AddYears(-number);
+            }
+
+            // Hours - English: "hour(s) ago", Swedish: "timme/timmar sedan"
+            if (lowerTime.Contains("timme") || lowerTime.Contains("timmar") || lowerTime.Contains("hour"))
+            {
+                return now.AddHours(-number);
+            }
+
+            // Minutes - English: "minute(s) ago", Swedish: "minut/minuter sedan"
+            if (lowerTime.Contains("minut") || lowerTime.Contains("minute"))
+            {
+                return now.AddMinutes(-number);
+            }
+
+            return now; // Default if no match
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug("Failed to parse relative time '{RelativeTime}': {Message}", relativeTime, ex.Message);
+            return DateTime.Now;
+        }
+    }
+
     private Review? ExtractReview(IWebElement element)
     {
         try
@@ -542,7 +613,16 @@ public class GoogleReviewScraper : IReviewScraper, IDisposable
             }
             catch { }
 
-            review.Time = DateTime.Now;
+            // Parse the relative time to get the actual review date
+            if (!string.IsNullOrEmpty(review.RelativeTime))
+            {
+                review.Time = ParseRelativeTime(review.RelativeTime);
+            }
+            else
+            {
+                review.Time = DateTime.Now;
+            }
+
             review.Language = "en";
 
             // Only return if we have at least author name
@@ -693,6 +773,9 @@ public class GoogleReviewScraper : IReviewScraper, IDisposable
             }
             catch { }
 
+            // Detect country based on available information
+            company.Country = DetectCountry(company);
+
             return company;
         }
         catch (Exception ex)
@@ -700,6 +783,49 @@ public class GoogleReviewScraper : IReviewScraper, IDisposable
             _logger.LogError(ex, "Error extracting company info");
             return null;
         }
+    }
+
+    private string DetectCountry(Company company)
+    {
+        // Check address for Swedish cities
+        if (!string.IsNullOrEmpty(company.Address))
+        {
+            var swedishCities = new[] { "Stockholm", "Gothenburg", "Göteborg", "Malmö", "Uppsala", "Västerås", "Örebro", "Linköping", "Helsingborg", "Jönköping", "Norrköping", "Lund", "Umeå", "Gävle", "Borås", "Eskilstuna", "Södertälje", "Karlstad", "Täby", "Växjö" };
+            if (swedishCities.Any(city => company.Address.Contains(city, StringComparison.OrdinalIgnoreCase)))
+            {
+                return "Sweden";
+            }
+
+            // Check for "Sweden" explicitly in address
+            if (company.Address.Contains("Sweden", StringComparison.OrdinalIgnoreCase) ||
+                company.Address.Contains("Sverige", StringComparison.OrdinalIgnoreCase))
+            {
+                return "Sweden";
+            }
+        }
+
+        // Check phone number for Swedish prefix
+        if (!string.IsNullOrEmpty(company.PhoneNumber))
+        {
+            var cleanPhone = company.PhoneNumber.Replace(" ", "").Replace("-", "").Replace("(", "").Replace(")", "");
+            if (cleanPhone.StartsWith("+46") || cleanPhone.StartsWith("0046") ||
+                (cleanPhone.StartsWith("0") && cleanPhone.Length == 10 && !cleanPhone.StartsWith("00")))
+            {
+                return "Sweden";
+            }
+        }
+
+        // Check website for .se domain
+        if (!string.IsNullOrEmpty(company.Website))
+        {
+            if (company.Website.Contains(".se/", StringComparison.OrdinalIgnoreCase) ||
+                company.Website.EndsWith(".se", StringComparison.OrdinalIgnoreCase))
+            {
+                return "Sweden";
+            }
+        }
+
+        return "Unknown";
     }
 
     public async Task<Company?> ScrapeReviewsByPlaceIdAsync(string placeId, ScrapingOptions? options = null)

@@ -44,6 +44,10 @@ namespace google_reviews.Models
         [Range(0.0, 5.0)]
         public double? OverallRating { get; set; }
 
+        [Display(Name = "Country")]
+        [StringLength(100)]
+        public string? Country { get; set; }
+
         // Navigation property
         public virtual ICollection<Review> Reviews { get; set; } = new List<Review>();
     }
